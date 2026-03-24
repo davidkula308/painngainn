@@ -1148,6 +1148,35 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => clearInterval(interval);
   }, [connectionId, isConnected, fetchOpenPositions]);
 
+  // Set starting balance on connect
+  useEffect(() => {
+    if (accountInfo && startingBalance === 0) {
+      setStartingBalance(accountInfo.balance);
+    }
+  }, [accountInfo, startingBalance]);
+
+  // Track daily P/L from balance change
+  useEffect(() => {
+    if (!accountInfo || startingBalance === 0) return;
+    const pnl = accountInfo.balance - startingBalance;
+    setDailyClosedPnl(pnl);
+    setDailyProfitReached(dailyMaxProfit > 0 && pnl >= dailyMaxProfit);
+    setDailyLossReached(dailyMaxLoss > 0 && pnl <= -dailyMaxLoss);
+  }, [accountInfo, startingBalance, dailyMaxProfit, dailyMaxLoss]);
+
+  // Update effective lot based on martingale/scaling
+  useEffect(() => {
+    if (lastTradeResult === "loss" && martingaleEnabled) {
+      setCurrentEffectiveLot((prev) => prev * martingaleMultiplier);
+    } else if (lastTradeResult === "win" && lotScalingEnabled) {
+      setCurrentEffectiveLot((prev) => prev * lotScalingMultiplier);
+    } else if (lastTradeResult === "win" && !lotScalingEnabled) {
+      setCurrentEffectiveLot(autoTradeLotSize);
+    } else if (lastTradeResult === "loss" && !martingaleEnabled) {
+      setCurrentEffectiveLot(autoTradeLotSize);
+    }
+  }, [lastTradeResult, martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier, autoTradeLotSize]);
+
   return (
     <MetaApiContext.Provider
       value={{
@@ -1156,12 +1185,19 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         autoTrade, autoTradeSymbols, autoTradeExcludedSymbols, lotSize, autoTradeLotSize,
         exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
         maxTradesPerSpike, useMaxTradesLimit, openPositions,
+        dailyMaxProfit, dailyMaxLoss, dailyProfitReached, dailyLossReached,
+        dailyClosedPnl, startingBalance,
+        spikeSound, tradeSound,
+        martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
         connect, disconnect, fetchAccountInfo, fetchSymbols,
         removeFromWatch, addToWatch, subscribeTick, fetchCandles,
         openPosition, openMultiplePositions, closePosition, fetchOpenPositions,
         setAutoTrade, setAutoTradeSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
         setLotSize, setAutoTradeLotSize, setExitMode, setTakeProfit, setStopLoss, setTpCandles, setSlCandles,
-        setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit, savedCredentials, error,
+        setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit,
+        setDailyMaxProfit, setDailyMaxLoss, setSpikeSound, setTradeSound,
+        setMartingaleEnabled, setMartingaleMultiplier, setLotScalingEnabled, setLotScalingMultiplier,
+        savedCredentials, error,
       }}
     >
       {children}
