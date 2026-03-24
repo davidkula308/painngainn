@@ -976,8 +976,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         if (totalOpened > 0) {
           toast.success(`Auto-${tradeType.toUpperCase()} opened ${totalOpened} trades on ${chosen.symbol} until margin exhausted`);
-        } else {
-          toast.error(`Auto-trade skipped ${chosen.symbol} — waiting for the next fresh spike`);
         }
 
         await fetchAccountInfo();
