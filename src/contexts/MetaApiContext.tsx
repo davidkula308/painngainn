@@ -162,6 +162,19 @@ interface TradeResult {
   error?: string;
 }
 
+export interface OpenPositionInfo {
+  ticket: number;
+  symbol: string;
+  type: string;
+  volume: number;
+  openPrice: number;
+  currentPrice: number;
+  profit: number;
+  sl: number;
+  tp: number;
+  openTime: string;
+}
+
 interface MetaApiContextType {
   isConnected: boolean;
   isConnecting: boolean;
@@ -183,6 +196,9 @@ interface MetaApiContextType {
   tpCandles: number;
   slCandles: number;
   timeframe: string;
+  maxTradesPerSpike: number;
+  useMaxTradesLimit: boolean;
+  openPositions: OpenPositionInfo[];
   connect: (login: string, password: string, server: string) => Promise<void>;
   disconnect: () => void;
   fetchAccountInfo: () => Promise<void>;
@@ -193,6 +209,8 @@ interface MetaApiContextType {
   fetchCandles: (symbol: string, tf?: string, count?: number) => Promise<Candle[]>;
   openPosition: (symbol: string, type: string, volume: number, tp?: number, sl?: number) => Promise<unknown>;
   openMultiplePositions: (symbol: string, type: string, volume: number, count: number, tp?: number, sl?: number) => Promise<TradeResult[]>;
+  closePosition: (ticket: number, symbol: string, type: string, volume: number) => Promise<void>;
+  fetchOpenPositions: () => Promise<void>;
   setAutoTrade: (v: boolean) => void;
   setAutoTradeSymbols: (v: string[]) => void;
   toggleAutoTradeSymbol: (symbol: string) => void;
@@ -205,6 +223,8 @@ interface MetaApiContextType {
   setTpCandles: (v: number) => void;
   setSlCandles: (v: number) => void;
   setTimeframe: (v: string) => void;
+  setMaxTradesPerSpike: (v: number) => void;
+  setUseMaxTradesLimit: (v: boolean) => void;
   savedCredentials: { login: string; password: string; server: string } | null;
   error: string | null;
 }
@@ -230,15 +250,19 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [autoTrade, setAutoTrade] = useState(false);
   const [autoTradeSymbols, setAutoTradeSymbols] = useState<string[]>([]);
   const [autoTradeExcludedSymbols, setAutoTradeExcludedSymbols] = useState<string[]>(() => loadStoredList(AUTO_TRADE_EXCLUDED_KEY));
-  const [lotSize, setLotSize] = useState(0.5);
-  const [autoTradeLotSize, setAutoTradeLotSize] = useState(0.5);
+  const [lotSize, setLotSize] = useState(3);
+  const [autoTradeLotSize, setAutoTradeLotSize] = useState(3);
   const [exitMode, setExitMode] = useState<ExitMode>("pips");
-  const [takeProfit, setTakeProfit] = useState(5000);
-  const [stopLoss, setStopLoss] = useState(8000);
+  const [takeProfit, setTakeProfit] = useState(500);
+  const [stopLoss, setStopLoss] = useState(800);
   const [tpCandles, setTpCandles] = useState(3);
   const [slCandles, setSlCandles] = useState(1);
   const [timeframe, setTimeframe] = useState("1m");
+  const [maxTradesPerSpike, setMaxTradesPerSpike] = useState(10);
+  const [useMaxTradesLimit, setUseMaxTradesLimit] = useState(false);
+  const [openPositions, setOpenPositions] = useState<OpenPositionInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const autoTradeRunningRef = useRef(false);
   const tickIntervals = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   const connectionIdRef = useRef<string | null>(null);
   const hasFetchedRef = useRef(false);
@@ -809,41 +833,38 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
           } catch (err: unknown) {
             lastError = err instanceof Error ? err.message : "Trade failed";
             if (attempt < 2) {
-              await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+              await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
             }
           }
         }
         results.push({ index: i + 1, success, error: success ? undefined : lastError });
-        if (i < count - 1) {
-          await new Promise((r) => setTimeout(r, 120));
-        }
       }
       return results;
     },
     [openPosition]
   );
 
-  // Open trades in a loop until margin is exhausted
+  // Open trades in a loop until margin is exhausted or max trades reached
   const openTradesUntilMarginExhausted = useCallback(
-    async (symbol: string, tradeType: string, volume: number, tp?: number, sl?: number) => {
+    async (symbol: string, tradeType: string, volume: number, tp?: number, sl?: number, maxTrades?: number) => {
       let totalOpened = 0;
       let consecutiveFailures = 0;
-      const MAX_SAFETY = 200;
-      for (let i = 0; i < MAX_SAFETY; i++) {
+      const limit = maxTrades && maxTrades > 0 ? maxTrades : 200;
+      for (let i = 0; i < limit; i++) {
         try {
           await openPosition(symbol, tradeType, volume, tp, sl);
           totalOpened++;
           consecutiveFailures = 0;
-          if (totalOpened === 1 || totalOpened % 3 === 0) {
+          if (totalOpened === 1 || totalOpened % 5 === 0) {
             await fetchAccountInfo();
           }
-          await new Promise((r) => setTimeout(r, 150));
+          await new Promise((r) => setTimeout(r, 50));
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : "";
           console.log(`Auto-trade stopped after ${totalOpened} trades: ${msg}`);
           consecutiveFailures++;
           if (consecutiveFailures >= 3) break;
-          await new Promise((r) => setTimeout(r, 250 * consecutiveFailures));
+          await new Promise((r) => setTimeout(r, 100 * consecutiveFailures));
         }
       }
       return totalOpened;
@@ -956,31 +977,36 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Auto-trade: pick the highest index number among simultaneous spikes
     if (autoTrade && newSpikes.length > 0) {
+      if (autoTradeRunningRef.current) {
+        console.log("Auto-trade already running, queuing spike for next cycle");
+        return;
+      }
+
       const sorted = [...newSpikes].sort(
         (a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol)
       );
       const chosen = sorted[0];
-      if (activeAutoTradeSpikeKeyRef.current === chosen.key) {
-        return;
-      }
 
-      activeAutoTradeSpikeKeyRef.current = chosen.key;
+      autoTradeRunningRef.current = true;
       const tradeType = getAutoTradeDirection(chosen.symbol, chosen.direction);
+      const effectiveTp = exitMode === "candles" ? tpCandles : takeProfit;
+      const effectiveSl = exitMode === "candles" ? slCandles : stopLoss;
+      const tradeLimit = useMaxTradesLimit ? maxTradesPerSpike : undefined;
 
       toast.info(`Auto-trading ${tradeType.toUpperCase()} on ${chosen.symbol} (highest index: ${extractIndexNumber(chosen.symbol)})`, { duration: 4000 });
 
       try {
         const totalOpened = await openTradesUntilMarginExhausted(
-          chosen.symbol, tradeType, autoTradeLotSize, takeProfit, stopLoss
+          chosen.symbol, tradeType, autoTradeLotSize, effectiveTp, effectiveSl, tradeLimit
         );
 
         if (totalOpened > 0) {
-          toast.success(`Auto-${tradeType.toUpperCase()} opened ${totalOpened} trades on ${chosen.symbol} until margin exhausted`);
+          toast.success(`Auto-${tradeType.toUpperCase()} opened ${totalOpened} trades on ${chosen.symbol}`);
         }
 
         await fetchAccountInfo();
       } finally {
-        activeAutoTradeSpikeKeyRef.current = null;
+        autoTradeRunningRef.current = false;
       }
     }
   }, [
@@ -993,6 +1019,11 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     autoTradeLotSize,
     takeProfit,
     stopLoss,
+    tpCandles,
+    slCandles,
+    exitMode,
+    useMaxTradesLimit,
+    maxTradesPerSpike,
     playSpikeSound,
     sendSpikeNotification,
     openTradesUntilMarginExhausted,
@@ -1018,6 +1049,65 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => clearInterval(interval);
   }, [isConnected, detectSpikes]);
 
+  const fetchOpenPositions = useCallback(async () => {
+    const connId = connectionIdRef.current;
+    if (!connId) return;
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
+        body: { action: "positions", connectionId: connId },
+      });
+      if (fnError) throw fnError;
+      if (Array.isArray(data)) {
+        setOpenPositions(data.map((p: Record<string, unknown>) => ({
+          ticket: toNumber(p.ticket ?? p.Ticket ?? p.id),
+          symbol: String(p.symbol ?? p.Symbol ?? ""),
+          type: String(p.type ?? p.Type ?? "buy").toLowerCase(),
+          volume: toNumber(p.volume ?? p.Volume ?? p.lots ?? p.Lots),
+          openPrice: toNumber(p.openPrice ?? p.OpenPrice ?? p.entryPrice ?? p.EntryPrice),
+          currentPrice: toNumber(p.currentPrice ?? p.CurrentPrice ?? p.price ?? p.Price),
+          profit: toNumber(p.profit ?? p.Profit),
+          sl: toNumber(p.sl ?? p.SL ?? p.stopLoss ?? p.StopLoss),
+          tp: toNumber(p.tp ?? p.TP ?? p.takeProfit ?? p.TakeProfit),
+          openTime: String(p.openTime ?? p.OpenTime ?? p.time ?? p.Time ?? ""),
+        })));
+      }
+    } catch (err) {
+      console.error("Failed to fetch positions:", err);
+    }
+  }, []);
+
+  const closePosition = useCallback(async (ticket: number, symbol: string, type: string, volume: number) => {
+    const connId = connectionIdRef.current;
+    if (!connId) throw new Error("Not connected");
+    const latestTick = await getLatestTick(symbol);
+    const closePrice = type === "buy" ? latestTick?.bid : latestTick?.ask;
+    const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
+      body: {
+        action: "closeOrder",
+        connectionId: connId,
+        ticket,
+        lots: volume,
+        price: closePrice,
+        symbol,
+        type,
+        comment: "Manual close",
+      },
+    });
+    if (fnError) throw fnError;
+    if (data?.error) throw new Error(data.error);
+    await fetchOpenPositions();
+    await fetchAccountInfo();
+    toast.success(`Closed position #${ticket}`);
+  }, [getLatestTick, fetchOpenPositions, fetchAccountInfo]);
+
+  // Periodic position refresh
+  useEffect(() => {
+    if (!connectionId || !isConnected) return;
+    fetchOpenPositions();
+    const interval = setInterval(fetchOpenPositions, 5000);
+    return () => clearInterval(interval);
+  }, [connectionId, isConnected, fetchOpenPositions]);
+
   return (
     <MetaApiContext.Provider
       value={{
@@ -1025,12 +1115,13 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         symbols, syntheticSymbols, watchList, ticks, spikes,
         autoTrade, autoTradeSymbols, autoTradeExcludedSymbols, lotSize, autoTradeLotSize,
         exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
+        maxTradesPerSpike, useMaxTradesLimit, openPositions,
         connect, disconnect, fetchAccountInfo, fetchSymbols,
         removeFromWatch, addToWatch, subscribeTick, fetchCandles,
-        openPosition, openMultiplePositions,
+        openPosition, openMultiplePositions, closePosition, fetchOpenPositions,
         setAutoTrade, setAutoTradeSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
         setLotSize, setAutoTradeLotSize, setExitMode, setTakeProfit, setStopLoss, setTpCandles, setSlCandles,
-        setTimeframe, savedCredentials, error,
+        setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit, savedCredentials, error,
       }}
     >
       {children}
