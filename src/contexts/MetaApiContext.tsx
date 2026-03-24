@@ -930,7 +930,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return results;
       }
     },
-    [openPosition, invoke]
+    [openPosition, getLatestTick, fetchSymbolParams]
   );
 
   // Open trades in a loop until margin is exhausted or max trades reached
