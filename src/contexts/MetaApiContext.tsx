@@ -833,14 +833,11 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
           } catch (err: unknown) {
             lastError = err instanceof Error ? err.message : "Trade failed";
             if (attempt < 2) {
-              await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+              await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
             }
           }
         }
         results.push({ index: i + 1, success, error: success ? undefined : lastError });
-        if (i < count - 1) {
-          await new Promise((r) => setTimeout(r, 120));
-        }
       }
       return results;
     },
