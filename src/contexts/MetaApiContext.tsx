@@ -869,30 +869,65 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [exitMode, fetchSymbolParams, getLatestTick, pipsToPriceLevel, timeframe, timeframeToMs, toCandleBucket]
   );
 
-  // Open multiple positions with retry and per-trade error reporting
+  // Open multiple positions using batch endpoint for speed
   const openMultiplePositions = useCallback(
     async (symbol: string, type: string, volume: number, count: number, tp?: number, sl?: number): Promise<TradeResult[]> => {
-      const results: TradeResult[] = [];
-      for (let i = 0; i < count; i++) {
-        let success = false;
-        let lastError = "";
-        for (let attempt = 0; attempt < 3; attempt++) {
+      if (count <= 0) return [];
+      
+      // Use batch endpoint for concurrent execution
+      try {
+        const params = await getSymbolParams(symbol);
+        const quote = await getQuote(symbol);
+        const entryPrice = type === "buy" ? quote.ask : quote.bid;
+        const spread = params?.spread ?? 0;
+        const tickSize = params?.tickSize ?? 0.01;
+        const slippage = Math.max(2, Math.ceil(spread));
+
+        let tpPrice: number | undefined;
+        let slPrice: number | undefined;
+        if (tp && tp > 0 && tickSize > 0) {
+          const minDist = Math.max(tickSize, spread * tickSize);
+          const dist = Math.max(tp * tickSize, minDist);
+          tpPrice = type === "buy" ? entryPrice + dist : entryPrice - dist;
+        }
+        if (sl && sl > 0 && tickSize > 0) {
+          const minDist = Math.max(tickSize, spread * tickSize);
+          const dist = Math.max(sl * tickSize, minDist);
+          slPrice = type === "buy" ? entryPrice - dist : entryPrice + dist;
+        }
+
+        const response = await invoke("mt5-proxy", {
+          action: "batchTrade",
+          connectionId: connectionIdRef.current,
+          symbol, type, volume, count,
+          tp: tpPrice, sl: slPrice,
+          price: entryPrice, slippage,
+        });
+
+        const data = response as { results?: { index: number; success: boolean; error?: string }[] };
+        if (data.results && Array.isArray(data.results)) {
+          return data.results.map(r => ({
+            index: r.index,
+            success: r.success,
+            error: r.success ? undefined : (r.error || "Trade failed"),
+          }));
+        }
+        return [{ index: 1, success: false, error: "Unexpected response" }];
+      } catch (err) {
+        // Fallback to sequential if batch fails
+        const results: TradeResult[] = [];
+        for (let i = 0; i < count; i++) {
           try {
             await openPosition(symbol, type, volume, tp, sl);
-            success = true;
-            break;
-          } catch (err: unknown) {
-            lastError = err instanceof Error ? err.message : "Trade failed";
-            if (attempt < 2) {
-              await new Promise((r) => setTimeout(r, 50 * (attempt + 1)));
-            }
+            results.push({ index: i + 1, success: true });
+          } catch (e: unknown) {
+            results.push({ index: i + 1, success: false, error: e instanceof Error ? e.message : "Trade failed" });
           }
         }
-        results.push({ index: i + 1, success, error: success ? undefined : lastError });
+        return results;
       }
-      return results;
     },
-    [openPosition]
+    [openPosition, invoke]
   );
 
   // Open trades in a loop until margin is exhausted or max trades reached

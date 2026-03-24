@@ -537,6 +537,81 @@ serve(async (req) => {
       });
     }
 
+    // BATCH TRADE - opens multiple trades concurrently with minimal overhead
+    if (action === "batchTrade") {
+      const { connectionId, symbol, type, volume, count, tp, sl, price, slippage } = body;
+      const numericVolume = Number(volume);
+      const tradeCount = Math.min(Math.max(Number(count) || 1, 1), 500);
+      if (!Number.isFinite(numericVolume) || numericVolume <= 0) {
+        return new Response(JSON.stringify({ error: "Invalid trade volume" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const operation = String(type).toLowerCase() === "sell" ? "Sell" : "Buy";
+      const tpNum = Number(tp);
+      const slNum = Number(sl);
+      const priceNum = Number(price);
+      const slippageNum = Number(slippage);
+
+      const fireOrder = async (index: number): Promise<{ index: number; success: boolean; ticket?: number; error?: string }> => {
+        try {
+          // Get fresh quote for each trade
+          const quote = await getQuote(connectionId, symbol);
+          const freshPrice = operation === "Buy" ? quote.ask : quote.bid;
+          const entryPrice = (Number.isFinite(freshPrice) && freshPrice! > 0) ? freshPrice! : priceNum;
+
+          let url = `${MT5_API_URL}/OrderSendSafe?id=${encodeURIComponent(connectionId)}&symbol=${encodeURIComponent(symbol)}&operation=${encodeURIComponent(operation)}&volume=${encodeURIComponent(String(numericVolume))}`;
+          if (Number.isFinite(entryPrice) && entryPrice > 0) url += `&price=${encodeURIComponent(String(entryPrice))}`;
+          if (Number.isFinite(slippageNum) && slippageNum >= 0) url += `&slippage=${encodeURIComponent(String(Math.round(slippageNum)))}`;
+          if (Number.isFinite(slNum) && slNum > 0) url += `&stoploss=${encodeURIComponent(String(slNum))}`;
+          if (Number.isFinite(tpNum) && tpNum > 0) url += `&takeprofit=${encodeURIComponent(String(tpNum))}`;
+
+          const response = await fetchWithRetry(url, { method: "GET" }, DEFAULT_REQUEST_TIMEOUT_MS);
+          const result = await parseApiResponse(response);
+
+          if (isTradeFailurePayload(result)) {
+            const payload = asRecord(result) ?? {};
+            return { index, success: false, error: String(payload.message ?? payload.error ?? "Trade failed") };
+          }
+
+          const ticket = extractTicket(result);
+          return { index, success: true, ticket: ticket ?? undefined };
+        } catch (err) {
+          return { index, success: false, error: err instanceof Error ? err.message : "Trade failed" };
+        }
+      };
+
+      // Fire all trades concurrently in batches of 10
+      const batchSize = 10;
+      const allResults: { index: number; success: boolean; ticket?: number; error?: string }[] = [];
+      
+      for (let batchStart = 0; batchStart < tradeCount; batchStart += batchSize) {
+        const batchEnd = Math.min(batchStart + batchSize, tradeCount);
+        const batch = [];
+        for (let i = batchStart; i < batchEnd; i++) {
+          batch.push(fireOrder(i + 1));
+        }
+        const batchResults = await Promise.all(batch);
+        allResults.push(...batchResults);
+        
+        // If all in this batch failed, stop early
+        if (batchResults.every(r => !r.success)) break;
+      }
+
+      const succeeded = allResults.filter(r => r.success).length;
+      const failed = allResults.filter(r => !r.success).length;
+
+      return new Response(JSON.stringify({
+        total: tradeCount,
+        succeeded,
+        failed,
+        results: allResults,
+      }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "closeOrder") {
       const { connectionId, ticket, lots, price, symbol, type, slippage, comment } = body;
       const ticketNum = Number(ticket);
