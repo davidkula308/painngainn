@@ -120,6 +120,27 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
           <p className="text-[9px] text-muted-foreground">
             Excluded symbols stay visible but are never auto-traded; if multiple spikes, trades highest eligible index only
           </p>
+
+          {/* Max Trades Per Spike */}
+          <div className="flex items-center justify-between">
+            <Label className="text-[10px] text-muted-foreground">Limit trades per spike</Label>
+            <Switch checked={useMaxTradesLimit} onCheckedChange={setUseMaxTradesLimit} />
+          </div>
+          {useMaxTradesLimit && (
+            <div className="space-y-1">
+              <Label className="text-[10px] text-muted-foreground">Max Trades Per Spike</Label>
+              <Input
+                type="number"
+                min="1"
+                value={maxTradesPerSpike}
+                onChange={(e) => setMaxTradesPerSpike(Number(e.target.value) || 1)}
+                className="bg-muted font-mono text-sm h-7"
+              />
+              <p className="text-[9px] text-muted-foreground">
+                Limits how many trades open per spike instead of using full margin
+              </p>
+            </div>
+          )}
         </div>
       )}
 
