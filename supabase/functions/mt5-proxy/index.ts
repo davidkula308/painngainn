@@ -584,9 +584,6 @@ serve(async (req) => {
       };
 
       // Fire ALL trades concurrently (no batching delay)
-      const batchSize = 10;
-      const allResults: { index: number; success: boolean; ticket?: number; error?: string }[] = [];
-      
       const allPromises = [];
       for (let i = 0; i < tradeCount; i++) {
         allPromises.push(fireOrder(i + 1));
