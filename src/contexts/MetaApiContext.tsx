@@ -1022,6 +1022,12 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return;
       }
 
+      // Check daily limits
+      if (dailyProfitReached || dailyLossReached) {
+        console.log("Daily limit reached, skipping auto-trade");
+        return;
+      }
+
       const sorted = [...newSpikes].sort(
         (a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol)
       );
@@ -1033,11 +1039,14 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const effectiveSl = exitMode === "candles" ? slCandles : stopLoss;
       const tradeLimit = useMaxTradesLimit ? maxTradesPerSpike : undefined;
 
-      toast.info(`Auto-trading ${tradeType.toUpperCase()} on ${chosen.symbol} (highest index: ${extractIndexNumber(chosen.symbol)})`, { duration: 4000 });
+      // Use martingale/scaling lot
+      const effectiveLot = (martingaleEnabled || lotScalingEnabled) ? currentEffectiveLot : autoTradeLotSize;
+
+      toast.info(`Auto-trading ${tradeType.toUpperCase()} on ${chosen.symbol} (lot: ${effectiveLot})`, { duration: 4000 });
 
       try {
         const totalOpened = await openTradesUntilMarginExhausted(
-          chosen.symbol, tradeType, autoTradeLotSize, effectiveTp, effectiveSl, tradeLimit
+          chosen.symbol, tradeType, effectiveLot, effectiveTp, effectiveSl, tradeLimit
         );
 
         if (totalOpened > 0) {
