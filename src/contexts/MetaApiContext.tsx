@@ -183,6 +183,9 @@ interface MetaApiContextType {
   tpCandles: number;
   slCandles: number;
   timeframe: string;
+  maxTradesPerSpike: number;
+  useMaxTradesLimit: boolean;
+  openPositions: OpenPositionInfo[];
   connect: (login: string, password: string, server: string) => Promise<void>;
   disconnect: () => void;
   fetchAccountInfo: () => Promise<void>;
@@ -193,6 +196,8 @@ interface MetaApiContextType {
   fetchCandles: (symbol: string, tf?: string, count?: number) => Promise<Candle[]>;
   openPosition: (symbol: string, type: string, volume: number, tp?: number, sl?: number) => Promise<unknown>;
   openMultiplePositions: (symbol: string, type: string, volume: number, count: number, tp?: number, sl?: number) => Promise<TradeResult[]>;
+  closePosition: (ticket: number, symbol: string, type: string, volume: number) => Promise<void>;
+  fetchOpenPositions: () => Promise<void>;
   setAutoTrade: (v: boolean) => void;
   setAutoTradeSymbols: (v: string[]) => void;
   toggleAutoTradeSymbol: (symbol: string) => void;
@@ -205,6 +210,8 @@ interface MetaApiContextType {
   setTpCandles: (v: number) => void;
   setSlCandles: (v: number) => void;
   setTimeframe: (v: string) => void;
+  setMaxTradesPerSpike: (v: number) => void;
+  setUseMaxTradesLimit: (v: boolean) => void;
   savedCredentials: { login: string; password: string; server: string } | null;
   error: string | null;
 }
