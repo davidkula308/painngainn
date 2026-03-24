@@ -844,27 +844,27 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [openPosition]
   );
 
-  // Open trades in a loop until margin is exhausted
+  // Open trades in a loop until margin is exhausted or max trades reached
   const openTradesUntilMarginExhausted = useCallback(
-    async (symbol: string, tradeType: string, volume: number, tp?: number, sl?: number) => {
+    async (symbol: string, tradeType: string, volume: number, tp?: number, sl?: number, maxTrades?: number) => {
       let totalOpened = 0;
       let consecutiveFailures = 0;
-      const MAX_SAFETY = 200;
-      for (let i = 0; i < MAX_SAFETY; i++) {
+      const limit = maxTrades && maxTrades > 0 ? maxTrades : 200;
+      for (let i = 0; i < limit; i++) {
         try {
           await openPosition(symbol, tradeType, volume, tp, sl);
           totalOpened++;
           consecutiveFailures = 0;
-          if (totalOpened === 1 || totalOpened % 3 === 0) {
+          if (totalOpened === 1 || totalOpened % 5 === 0) {
             await fetchAccountInfo();
           }
-          await new Promise((r) => setTimeout(r, 150));
+          await new Promise((r) => setTimeout(r, 50));
         } catch (err: unknown) {
           const msg = err instanceof Error ? err.message : "";
           console.log(`Auto-trade stopped after ${totalOpened} trades: ${msg}`);
           consecutiveFailures++;
           if (consecutiveFailures >= 3) break;
-          await new Promise((r) => setTimeout(r, 250 * consecutiveFailures));
+          await new Promise((r) => setTimeout(r, 100 * consecutiveFailures));
         }
       }
       return totalOpened;
