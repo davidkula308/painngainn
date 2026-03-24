@@ -20,6 +20,7 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
     tpCandles, setTpCandles, slCandles, setSlCandles,
     openMultiplePositions, accountInfo, watchList, isConnected,
     autoTradeSymbols, autoTradeExcludedSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
+    maxTradesPerSpike, setMaxTradesPerSpike, useMaxTradesLimit, setUseMaxTradesLimit,
   } = useMetaApi();
   const [numTrades, setNumTrades] = useState(1);
   const [isTrading, setIsTrading] = useState(false);
