@@ -587,18 +587,11 @@ serve(async (req) => {
       const batchSize = 10;
       const allResults: { index: number; success: boolean; ticket?: number; error?: string }[] = [];
       
-      for (let batchStart = 0; batchStart < tradeCount; batchStart += batchSize) {
-        const batchEnd = Math.min(batchStart + batchSize, tradeCount);
-        const batch = [];
-        for (let i = batchStart; i < batchEnd; i++) {
-          batch.push(fireOrder(i + 1));
-        }
-        const batchResults = await Promise.all(batch);
-        allResults.push(...batchResults);
-        
-        // If all in this batch failed, stop early
-        if (batchResults.every(r => !r.success)) break;
+      const allPromises = [];
+      for (let i = 0; i < tradeCount; i++) {
+        allPromises.push(fireOrder(i + 1));
       }
+      const allResults = await Promise.all(allPromises);
 
       const succeeded = allResults.filter(r => r.success).length;
       const failed = allResults.filter(r => !r.success).length;
