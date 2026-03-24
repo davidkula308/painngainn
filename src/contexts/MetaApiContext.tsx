@@ -1202,6 +1202,94 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [lastTradeResult, martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier, autoTradeLotSize]);
 
+  // Check for existing server session on mount
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const { data } = await supabase.functions.invoke("auto-trader", {
+          body: { action: "getSession" },
+        });
+        if (data && data.id) {
+          setServerAutoTradeActive(true);
+          setServerSessionId(data.id);
+        }
+      } catch {}
+    };
+    checkSession();
+  }, []);
+
+  const startServerAutoTrade = useCallback(async () => {
+    const creds = loadCredentials();
+    if (!creds || !connectionId) {
+      toast.error("Connect to MT5 first");
+      return;
+    }
+    setIsStartingServerAutoTrade(true);
+    try {
+      const config = {
+        connection_id: connectionId,
+        credentials_login: creds.login,
+        credentials_password: creds.password,
+        credentials_host: creds.server,
+        credentials_port: 443,
+        is_active: true,
+        auto_trade_symbols: autoTradeSymbols,
+        excluded_symbols: autoTradeExcludedSymbols,
+        lot_size: autoTradeLotSize,
+        exit_mode: exitMode,
+        take_profit: takeProfit,
+        stop_loss: stopLoss,
+        tp_candles: tpCandles,
+        sl_candles: slCandles,
+        timeframe,
+        use_max_trades_limit: useMaxTradesLimit,
+        max_trades_per_spike: maxTradesPerSpike,
+        daily_max_profit: dailyMaxProfit,
+        daily_max_loss: dailyMaxLoss,
+        martingale_enabled: martingaleEnabled,
+        martingale_multiplier: martingaleMultiplier,
+        lot_scaling_enabled: lotScalingEnabled,
+        lot_scaling_multiplier: lotScalingMultiplier,
+        starting_balance: startingBalance || accountInfo?.balance || 0,
+        current_effective_lot: autoTradeLotSize,
+      };
+
+      const { data, error: fnError } = await supabase.functions.invoke("auto-trader", {
+        body: { action: "startSession", config },
+      });
+      if (fnError) throw fnError;
+      if (data?.error) throw new Error(data.error);
+
+      setServerAutoTradeActive(true);
+      setServerSessionId(data.id);
+      toast.success("Server-side auto-trading started! Trades will run 24/7 even when app is closed.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to start server auto-trade");
+    } finally {
+      setIsStartingServerAutoTrade(false);
+    }
+  }, [
+    connectionId, autoTradeSymbols, autoTradeExcludedSymbols, autoTradeLotSize,
+    exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
+    useMaxTradesLimit, maxTradesPerSpike, dailyMaxProfit, dailyMaxLoss,
+    martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
+    startingBalance, accountInfo,
+  ]);
+
+  const stopServerAutoTrade = useCallback(async () => {
+    if (!serverSessionId) return;
+    try {
+      await supabase.functions.invoke("auto-trader", {
+        body: { action: "stopSession", sessionId: serverSessionId },
+      });
+      setServerAutoTradeActive(false);
+      setServerSessionId(null);
+      toast.success("Server-side auto-trading stopped");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to stop");
+    }
+  }, [serverSessionId]);
+
   return (
     <MetaApiContext.Provider
       value={{
@@ -1214,6 +1302,8 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         dailyClosedPnl, startingBalance,
         spikeSound, tradeSound,
         martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
+        serverAutoTradeActive, serverSessionId, isStartingServerAutoTrade,
+        startServerAutoTrade, stopServerAutoTrade,
         connect, disconnect, fetchAccountInfo, fetchSymbols,
         removeFromWatch, addToWatch, subscribeTick, fetchCandles,
         openPosition, openMultiplePositions, closePosition, fetchOpenPositions,
