@@ -977,31 +977,36 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     // Auto-trade: pick the highest index number among simultaneous spikes
     if (autoTrade && newSpikes.length > 0) {
+      if (autoTradeRunningRef.current) {
+        console.log("Auto-trade already running, queuing spike for next cycle");
+        return;
+      }
+
       const sorted = [...newSpikes].sort(
         (a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol)
       );
       const chosen = sorted[0];
-      if (activeAutoTradeSpikeKeyRef.current === chosen.key) {
-        return;
-      }
 
-      activeAutoTradeSpikeKeyRef.current = chosen.key;
+      autoTradeRunningRef.current = true;
       const tradeType = getAutoTradeDirection(chosen.symbol, chosen.direction);
+      const effectiveTp = exitMode === "candles" ? tpCandles : takeProfit;
+      const effectiveSl = exitMode === "candles" ? slCandles : stopLoss;
+      const tradeLimit = useMaxTradesLimit ? maxTradesPerSpike : undefined;
 
       toast.info(`Auto-trading ${tradeType.toUpperCase()} on ${chosen.symbol} (highest index: ${extractIndexNumber(chosen.symbol)})`, { duration: 4000 });
 
       try {
         const totalOpened = await openTradesUntilMarginExhausted(
-          chosen.symbol, tradeType, autoTradeLotSize, takeProfit, stopLoss
+          chosen.symbol, tradeType, autoTradeLotSize, effectiveTp, effectiveSl, tradeLimit
         );
 
         if (totalOpened > 0) {
-          toast.success(`Auto-${tradeType.toUpperCase()} opened ${totalOpened} trades on ${chosen.symbol} until margin exhausted`);
+          toast.success(`Auto-${tradeType.toUpperCase()} opened ${totalOpened} trades on ${chosen.symbol}`);
         }
 
         await fetchAccountInfo();
       } finally {
-        activeAutoTradeSpikeKeyRef.current = null;
+        autoTradeRunningRef.current = false;
       }
     }
   }, [
