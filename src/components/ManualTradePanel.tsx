@@ -24,6 +24,7 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
     dailyProfitReached, dailyLossReached,
     martingaleEnabled, setMartingaleEnabled, martingaleMultiplier, setMartingaleMultiplier,
     lotScalingEnabled, setLotScalingEnabled, lotScalingMultiplier, setLotScalingMultiplier,
+    serverAutoTradeActive, isStartingServerAutoTrade, startServerAutoTrade, stopServerAutoTrade,
   } = useMetaApi();
   const [numTrades, setNumTrades] = useState(1);
   const [isTrading, setIsTrading] = useState(false);
