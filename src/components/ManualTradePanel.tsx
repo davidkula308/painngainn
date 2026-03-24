@@ -149,6 +149,42 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
               </p>
             </div>
           )}
+
+          {/* Server-Side Auto-Trading (24/7) */}
+          <div className="mt-2 border-t border-border pt-2 space-y-2">
+            <p className="text-[10px] font-semibold text-muted-foreground">🌐 Server-Side Trading (24/7)</p>
+            <p className="text-[9px] text-muted-foreground">
+              Runs on the server even when your phone is closed or app is minimized
+            </p>
+            {serverAutoTradeActive ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-bullish opacity-75" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-bullish" />
+                  </span>
+                  <span className="text-[10px] text-bullish font-semibold">SERVER ACTIVE — trading 24/7</span>
+                </div>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="w-full h-7 text-[10px]"
+                  onClick={stopServerAutoTrade}
+                >
+                  Stop Server Auto-Trade
+                </Button>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                className="w-full h-7 text-[10px] bg-bullish hover:bg-bullish/90"
+                disabled={isStartingServerAutoTrade || !isConnected}
+                onClick={startServerAutoTrade}
+              >
+                {isStartingServerAutoTrade ? "Starting..." : "Start 24/7 Server Auto-Trade"}
+              </Button>
+            )}
+          </div>
         </div>
       )}
 
