@@ -578,6 +578,40 @@ serve(async (req) => {
       });
     }
 
+    // OPEN POSITIONS
+    if (action === "positions") {
+      const { connectionId } = body;
+      const response = await fetchWithRetry(
+        `${MT5_API_URL}/OpenedOrders?id=${encodeURIComponent(connectionId)}`,
+        { method: "GET" },
+        DEFAULT_REQUEST_TIMEOUT_MS
+      );
+      const data = await parseApiResponse(response);
+      if (Array.isArray(data)) {
+        const positions = data.map((order: unknown) => {
+          const payload = asRecord(order) ?? {};
+          return {
+            ticket: extractTicket(payload.ticket ?? payload.Ticket ?? payload.order ?? payload.Order ?? payload.positionId) ?? 0,
+            symbol: String(payload.symbol ?? payload.Symbol ?? ""),
+            type: String(payload.type ?? payload.Type ?? payload.operation ?? payload.Operation ?? "").toLowerCase().includes("sell") ? "sell" : "buy",
+            volume: toFiniteNumber(payload.lots ?? payload.Lots ?? payload.volume ?? payload.Volume) ?? 0,
+            openPrice: toFiniteNumber(payload.openPrice ?? payload.OpenPrice ?? payload.price ?? payload.Price) ?? 0,
+            currentPrice: toFiniteNumber(payload.currentPrice ?? payload.CurrentPrice ?? payload.marketPrice ?? payload.MarketPrice) ?? 0,
+            profit: toFiniteNumber(payload.profit ?? payload.Profit) ?? 0,
+            sl: toFiniteNumber(payload.stopLoss ?? payload.StopLoss ?? payload.sl ?? payload.SL) ?? 0,
+            tp: toFiniteNumber(payload.takeProfit ?? payload.TakeProfit ?? payload.tp ?? payload.TP) ?? 0,
+            openTime: String(payload.openTime ?? payload.OpenTime ?? payload.time ?? payload.Time ?? ""),
+          };
+        });
+        return new Response(JSON.stringify(positions), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify([]), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     return new Response(
       JSON.stringify({ error: "Unknown action" }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
