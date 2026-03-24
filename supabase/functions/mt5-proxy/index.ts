@@ -554,20 +554,21 @@ serve(async (req) => {
       const priceNum = Number(price);
       const slippageNum = Number(slippage);
 
+      // Get quote ONCE for all trades in the batch
+      const quote = await getQuote(connectionId, symbol);
+      const freshPrice = operation === "Buy" ? quote.ask : quote.bid;
+      const entryPrice = (Number.isFinite(freshPrice) && freshPrice! > 0) ? freshPrice! : priceNum;
+
+      // Pre-build the URL template (same for all trades)
+      let baseUrl = `${MT5_API_URL}/OrderSendSafe?id=${encodeURIComponent(connectionId)}&symbol=${encodeURIComponent(symbol)}&operation=${encodeURIComponent(operation)}&volume=${encodeURIComponent(String(numericVolume))}`;
+      if (Number.isFinite(entryPrice) && entryPrice > 0) baseUrl += `&price=${encodeURIComponent(String(entryPrice))}`;
+      if (Number.isFinite(slippageNum) && slippageNum >= 0) baseUrl += `&slippage=${encodeURIComponent(String(Math.round(slippageNum)))}`;
+      if (Number.isFinite(slNum) && slNum > 0) baseUrl += `&stoploss=${encodeURIComponent(String(slNum))}`;
+      if (Number.isFinite(tpNum) && tpNum > 0) baseUrl += `&takeprofit=${encodeURIComponent(String(tpNum))}`;
+
       const fireOrder = async (index: number): Promise<{ index: number; success: boolean; ticket?: number; error?: string }> => {
         try {
-          // Get fresh quote for each trade
-          const quote = await getQuote(connectionId, symbol);
-          const freshPrice = operation === "Buy" ? quote.ask : quote.bid;
-          const entryPrice = (Number.isFinite(freshPrice) && freshPrice! > 0) ? freshPrice! : priceNum;
-
-          let url = `${MT5_API_URL}/OrderSendSafe?id=${encodeURIComponent(connectionId)}&symbol=${encodeURIComponent(symbol)}&operation=${encodeURIComponent(operation)}&volume=${encodeURIComponent(String(numericVolume))}`;
-          if (Number.isFinite(entryPrice) && entryPrice > 0) url += `&price=${encodeURIComponent(String(entryPrice))}`;
-          if (Number.isFinite(slippageNum) && slippageNum >= 0) url += `&slippage=${encodeURIComponent(String(Math.round(slippageNum)))}`;
-          if (Number.isFinite(slNum) && slNum > 0) url += `&stoploss=${encodeURIComponent(String(slNum))}`;
-          if (Number.isFinite(tpNum) && tpNum > 0) url += `&takeprofit=${encodeURIComponent(String(tpNum))}`;
-
-          const response = await fetchWithRetry(url, { method: "GET" }, DEFAULT_REQUEST_TIMEOUT_MS);
+          const response = await fetchWithRetry(baseUrl, { method: "GET" }, DEFAULT_REQUEST_TIMEOUT_MS);
           const result = await parseApiResponse(response);
 
           if (isTradeFailurePayload(result)) {
@@ -582,7 +583,7 @@ serve(async (req) => {
         }
       };
 
-      // Fire all trades concurrently in batches of 10
+      // Fire ALL trades concurrently (no batching delay)
       const batchSize = 10;
       const allResults: { index: number; success: boolean; ticket?: number; error?: string }[] = [];
       
