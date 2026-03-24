@@ -876,9 +876,9 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
       
       // Use batch endpoint for concurrent execution
       try {
-        const params = await getSymbolParams(symbol);
-        const quote = await getQuote(symbol);
-        const entryPrice = type === "buy" ? quote.ask : quote.bid;
+        const latestTick = await getLatestTick(symbol);
+        const params = await fetchSymbolParams(symbol, latestTick);
+        const entryPrice = type === "buy" ? latestTick?.ask : latestTick?.bid;
         const spread = params?.spread ?? 0;
         const tickSize = params?.tickSize ?? 0.01;
         const slippage = Math.max(2, Math.ceil(spread));
@@ -888,25 +888,28 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (tp && tp > 0 && tickSize > 0) {
           const minDist = Math.max(tickSize, spread * tickSize);
           const dist = Math.max(tp * tickSize, minDist);
-          tpPrice = type === "buy" ? entryPrice + dist : entryPrice - dist;
+          tpPrice = type === "buy" ? (entryPrice ?? 0) + dist : (entryPrice ?? 0) - dist;
         }
         if (sl && sl > 0 && tickSize > 0) {
           const minDist = Math.max(tickSize, spread * tickSize);
           const dist = Math.max(sl * tickSize, minDist);
-          slPrice = type === "buy" ? entryPrice - dist : entryPrice + dist;
+          slPrice = type === "buy" ? (entryPrice ?? 0) - dist : (entryPrice ?? 0) + dist;
         }
 
-        const response = await invoke("mt5-proxy", {
-          action: "batchTrade",
-          connectionId: connectionIdRef.current,
-          symbol, type, volume, count,
-          tp: tpPrice, sl: slPrice,
-          price: entryPrice, slippage,
+        const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
+          body: {
+            action: "batchTrade",
+            connectionId: connectionIdRef.current,
+            symbol, type, volume, count,
+            tp: tpPrice, sl: slPrice,
+            price: entryPrice, slippage,
+          },
         });
 
-        const data = response as { results?: { index: number; success: boolean; error?: string }[] };
-        if (data.results && Array.isArray(data.results)) {
-          return data.results.map(r => ({
+        if (fnError) throw fnError;
+
+        if (data?.results && Array.isArray(data.results)) {
+          return data.results.map((r: { index: number; success: boolean; error?: string }) => ({
             index: r.index,
             success: r.success,
             error: r.success ? undefined : (r.error || "Trade failed"),
