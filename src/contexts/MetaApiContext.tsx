@@ -214,6 +214,12 @@ interface MetaApiContextType {
   martingaleMultiplier: number;
   lotScalingEnabled: boolean;
   lotScalingMultiplier: number;
+  // Server-side auto-trading
+  serverAutoTradeActive: boolean;
+  serverSessionId: string | null;
+  isStartingServerAutoTrade: boolean;
+  startServerAutoTrade: () => Promise<void>;
+  stopServerAutoTrade: () => Promise<void>;
   connect: (login: string, password: string, server: string) => Promise<void>;
   disconnect: () => void;
   fetchAccountInfo: () => Promise<void>;
