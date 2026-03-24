@@ -199,6 +199,21 @@ interface MetaApiContextType {
   maxTradesPerSpike: number;
   useMaxTradesLimit: boolean;
   openPositions: OpenPositionInfo[];
+  // Daily limits
+  dailyMaxProfit: number;
+  dailyMaxLoss: number;
+  dailyProfitReached: boolean;
+  dailyLossReached: boolean;
+  dailyClosedPnl: number;
+  startingBalance: number;
+  // Sounds
+  spikeSound: string;
+  tradeSound: string;
+  // Martingale & lot scaling
+  martingaleEnabled: boolean;
+  martingaleMultiplier: number;
+  lotScalingEnabled: boolean;
+  lotScalingMultiplier: number;
   connect: (login: string, password: string, server: string) => Promise<void>;
   disconnect: () => void;
   fetchAccountInfo: () => Promise<void>;
@@ -225,6 +240,14 @@ interface MetaApiContextType {
   setTimeframe: (v: string) => void;
   setMaxTradesPerSpike: (v: number) => void;
   setUseMaxTradesLimit: (v: boolean) => void;
+  setDailyMaxProfit: (v: number) => void;
+  setDailyMaxLoss: (v: number) => void;
+  setSpikeSound: (v: string) => void;
+  setTradeSound: (v: string) => void;
+  setMartingaleEnabled: (v: boolean) => void;
+  setMartingaleMultiplier: (v: number) => void;
+  setLotScalingEnabled: (v: boolean) => void;
+  setLotScalingMultiplier: (v: number) => void;
   savedCredentials: { login: string; password: string; server: string } | null;
   error: string | null;
 }
