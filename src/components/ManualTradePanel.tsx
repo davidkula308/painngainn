@@ -21,6 +21,9 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
     openMultiplePositions, accountInfo, watchList, isConnected,
     autoTradeSymbols, autoTradeExcludedSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
     maxTradesPerSpike, setMaxTradesPerSpike, useMaxTradesLimit, setUseMaxTradesLimit,
+    dailyProfitReached, dailyLossReached,
+    martingaleEnabled, setMartingaleEnabled, martingaleMultiplier, setMartingaleMultiplier,
+    lotScalingEnabled, setLotScalingEnabled, lotScalingMultiplier, setLotScalingMultiplier,
   } = useMetaApi();
   const [numTrades, setNumTrades] = useState(1);
   const [isTrading, setIsTrading] = useState(false);
@@ -31,6 +34,10 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
   const executeTrades = async (type: "buy" | "sell") => {
     if (!currentSymbol || !isConnected) {
       toast.error("Select a symbol and connect first");
+      return;
+    }
+    if (dailyProfitReached || dailyLossReached) {
+      toast.error("Daily limit reached — trading paused");
       return;
     }
     setIsTrading(true);
@@ -144,7 +151,60 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
         </div>
       )}
 
-      {/* Symbol */}
+      {/* Martingale & Lot Scaling */}
+      <div className="space-y-2 bg-muted/50 rounded p-2">
+        <p className="text-[10px] font-semibold text-muted-foreground">Lot Management</p>
+
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] text-muted-foreground">Martingale (on loss)</Label>
+          <Switch checked={martingaleEnabled} onCheckedChange={setMartingaleEnabled} />
+        </div>
+        {martingaleEnabled && (
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Loss Multiplier</Label>
+            <Input
+              type="number"
+              step="0.1"
+              min="1.1"
+              value={martingaleMultiplier || ""}
+              onChange={(e) => setMartingaleMultiplier(Number(e.target.value) || 2)}
+              className="bg-muted font-mono text-sm h-7"
+            />
+            <p className="text-[9px] text-muted-foreground">
+              If last trades closed at loss, next spike lot = previous × multiplier
+            </p>
+          </div>
+        )}
+
+        <div className="flex items-center justify-between">
+          <Label className="text-[10px] text-muted-foreground">Lot Scaling (on profit)</Label>
+          <Switch checked={lotScalingEnabled} onCheckedChange={setLotScalingEnabled} />
+        </div>
+        {lotScalingEnabled && (
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Profit Multiplier</Label>
+            <Input
+              type="number"
+              step="0.1"
+              min="1.1"
+              value={lotScalingMultiplier || ""}
+              onChange={(e) => setLotScalingMultiplier(Number(e.target.value) || 1.5)}
+              className="bg-muted font-mono text-sm h-7"
+            />
+            <p className="text-[9px] text-muted-foreground">
+              If last trades closed in profit, next spike lot = previous × multiplier
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Daily limit warnings */}
+      {(dailyProfitReached || dailyLossReached) && (
+        <div className="bg-bearish/10 rounded p-2 text-[10px] font-semibold text-bearish">
+          {dailyProfitReached && <p>✓ Daily profit target reached — trading paused</p>}
+          {dailyLossReached && <p>✗ Daily loss limit reached — trading paused</p>}
+        </div>
+      )}
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">Symbol</Label>
         <select

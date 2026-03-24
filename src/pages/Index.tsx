@@ -4,8 +4,9 @@ import AccountHeader from "@/components/AccountHeader";
 import HomeTab from "@/components/HomeTab";
 import AccountTab from "@/components/AccountTab";
 import TradeTab from "@/components/TradeTab";
+import SettingsTab from "@/components/SettingsTab";
 
-type Tab = "home" | "account" | "trade";
+type Tab = "home" | "account" | "trade" | "settings";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<Tab>("account");
@@ -19,6 +20,7 @@ const Index = () => {
           {activeTab === "home" && <HomeTab />}
           {activeTab === "account" && <AccountTab />}
           {activeTab === "trade" && <TradeTab />}
+          {activeTab === "settings" && <SettingsTab />}
         </div>
       </div>
     </div>

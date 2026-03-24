@@ -1,7 +1,7 @@
-import { Home, User, TrendingUp } from "lucide-react";
+import { Home, User, TrendingUp, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-type Tab = "home" | "account" | "trade";
+type Tab = "home" | "account" | "trade" | "settings";
 
 interface AppSidebarProps {
   activeTab: Tab;
@@ -12,6 +12,7 @@ const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: "home", label: "Home", icon: <Home size={18} /> },
   { id: "account", label: "Account", icon: <User size={18} /> },
   { id: "trade", label: "Trade", icon: <TrendingUp size={18} /> },
+  { id: "settings", label: "Settings", icon: <Settings size={18} /> },
 ];
 
 const AppSidebar = ({ activeTab, onTabChange }: AppSidebarProps) => {

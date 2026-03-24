@@ -91,3 +91,11 @@
     50% { box-shadow: 0 0 8px 3px hsl(var(--bullish) / 0.2); }
   }
 }
+
+/* Hide Lovable badge */
+a[href*="lovable.dev"][style],
+div[id*="lovable"],
+a[aria-label*="lovable" i],
+img[alt*="lovable" i] {
+  display: none !important;
+}
