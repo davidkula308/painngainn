@@ -162,6 +162,19 @@ interface TradeResult {
   error?: string;
 }
 
+export interface OpenPositionInfo {
+  ticket: number;
+  symbol: string;
+  type: string;
+  volume: number;
+  openPrice: number;
+  currentPrice: number;
+  profit: number;
+  sl: number;
+  tp: number;
+  openTime: string;
+}
+
 interface MetaApiContextType {
   isConnected: boolean;
   isConnecting: boolean;
