@@ -1044,6 +1044,65 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => clearInterval(interval);
   }, [isConnected, detectSpikes]);
 
+  const fetchOpenPositions = useCallback(async () => {
+    const connId = connectionIdRef.current;
+    if (!connId) return;
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
+        body: { action: "positions", connectionId: connId },
+      });
+      if (fnError) throw fnError;
+      if (Array.isArray(data)) {
+        setOpenPositions(data.map((p: Record<string, unknown>) => ({
+          ticket: toNumber(p.ticket ?? p.Ticket ?? p.id),
+          symbol: String(p.symbol ?? p.Symbol ?? ""),
+          type: String(p.type ?? p.Type ?? "buy").toLowerCase(),
+          volume: toNumber(p.volume ?? p.Volume ?? p.lots ?? p.Lots),
+          openPrice: toNumber(p.openPrice ?? p.OpenPrice ?? p.entryPrice ?? p.EntryPrice),
+          currentPrice: toNumber(p.currentPrice ?? p.CurrentPrice ?? p.price ?? p.Price),
+          profit: toNumber(p.profit ?? p.Profit),
+          sl: toNumber(p.sl ?? p.SL ?? p.stopLoss ?? p.StopLoss),
+          tp: toNumber(p.tp ?? p.TP ?? p.takeProfit ?? p.TakeProfit),
+          openTime: String(p.openTime ?? p.OpenTime ?? p.time ?? p.Time ?? ""),
+        })));
+      }
+    } catch (err) {
+      console.error("Failed to fetch positions:", err);
+    }
+  }, []);
+
+  const closePosition = useCallback(async (ticket: number, symbol: string, type: string, volume: number) => {
+    const connId = connectionIdRef.current;
+    if (!connId) throw new Error("Not connected");
+    const latestTick = await getLatestTick(symbol);
+    const closePrice = type === "buy" ? latestTick?.bid : latestTick?.ask;
+    const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
+      body: {
+        action: "closeOrder",
+        connectionId: connId,
+        ticket,
+        lots: volume,
+        price: closePrice,
+        symbol,
+        type,
+        comment: "Manual close",
+      },
+    });
+    if (fnError) throw fnError;
+    if (data?.error) throw new Error(data.error);
+    await fetchOpenPositions();
+    await fetchAccountInfo();
+    toast.success(`Closed position #${ticket}`);
+  }, [getLatestTick, fetchOpenPositions, fetchAccountInfo]);
+
+  // Periodic position refresh
+  useEffect(() => {
+    if (!connectionId || !isConnected) return;
+    fetchOpenPositions();
+    const interval = setInterval(fetchOpenPositions, 5000);
+    return () => clearInterval(interval);
+  }, [connectionId, isConnected, fetchOpenPositions]);
+
   return (
     <MetaApiContext.Provider
       value={{
@@ -1051,12 +1110,13 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         symbols, syntheticSymbols, watchList, ticks, spikes,
         autoTrade, autoTradeSymbols, autoTradeExcludedSymbols, lotSize, autoTradeLotSize,
         exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
+        maxTradesPerSpike, useMaxTradesLimit, openPositions,
         connect, disconnect, fetchAccountInfo, fetchSymbols,
         removeFromWatch, addToWatch, subscribeTick, fetchCandles,
-        openPosition, openMultiplePositions,
+        openPosition, openMultiplePositions, closePosition, fetchOpenPositions,
         setAutoTrade, setAutoTradeSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
         setLotSize, setAutoTradeLotSize, setExitMode, setTakeProfit, setStopLoss, setTpCandles, setSlCandles,
-        setTimeframe, savedCredentials, error,
+        setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit, savedCredentials, error,
       }}
     >
       {children}
