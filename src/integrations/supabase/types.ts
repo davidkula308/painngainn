@@ -14,7 +14,111 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      trading_sessions: {
+        Row: {
+          auto_trade_symbols: string[]
+          connection_id: string
+          created_at: string
+          credentials_host: string
+          credentials_login: string
+          credentials_password: string
+          credentials_port: number
+          current_effective_lot: number
+          daily_closed_pnl: number
+          daily_max_loss: number
+          daily_max_profit: number
+          excluded_symbols: string[]
+          exit_mode: string
+          id: string
+          is_active: boolean
+          last_spike_key: string | null
+          last_trade_result: string | null
+          lot_scaling_enabled: boolean
+          lot_scaling_multiplier: number
+          lot_size: number
+          martingale_enabled: boolean
+          martingale_multiplier: number
+          max_trades_per_spike: number
+          processed_spike_keys: string[]
+          sl_candles: number
+          starting_balance: number
+          stop_loss: number
+          take_profit: number
+          timeframe: string
+          tp_candles: number
+          updated_at: string
+          use_max_trades_limit: boolean
+        }
+        Insert: {
+          auto_trade_symbols?: string[]
+          connection_id: string
+          created_at?: string
+          credentials_host: string
+          credentials_login: string
+          credentials_password: string
+          credentials_port?: number
+          current_effective_lot?: number
+          daily_closed_pnl?: number
+          daily_max_loss?: number
+          daily_max_profit?: number
+          excluded_symbols?: string[]
+          exit_mode?: string
+          id?: string
+          is_active?: boolean
+          last_spike_key?: string | null
+          last_trade_result?: string | null
+          lot_scaling_enabled?: boolean
+          lot_scaling_multiplier?: number
+          lot_size?: number
+          martingale_enabled?: boolean
+          martingale_multiplier?: number
+          max_trades_per_spike?: number
+          processed_spike_keys?: string[]
+          sl_candles?: number
+          starting_balance?: number
+          stop_loss?: number
+          take_profit?: number
+          timeframe?: string
+          tp_candles?: number
+          updated_at?: string
+          use_max_trades_limit?: boolean
+        }
+        Update: {
+          auto_trade_symbols?: string[]
+          connection_id?: string
+          created_at?: string
+          credentials_host?: string
+          credentials_login?: string
+          credentials_password?: string
+          credentials_port?: number
+          current_effective_lot?: number
+          daily_closed_pnl?: number
+          daily_max_loss?: number
+          daily_max_profit?: number
+          excluded_symbols?: string[]
+          exit_mode?: string
+          id?: string
+          is_active?: boolean
+          last_spike_key?: string | null
+          last_trade_result?: string | null
+          lot_scaling_enabled?: boolean
+          lot_scaling_multiplier?: number
+          lot_size?: number
+          martingale_enabled?: boolean
+          martingale_multiplier?: number
+          max_trades_per_spike?: number
+          processed_spike_keys?: string[]
+          sl_candles?: number
+          starting_balance?: number
+          stop_loss?: number
+          take_profit?: number
+          timeframe?: string
+          tp_candles?: number
+          updated_at?: string
+          use_max_trades_limit?: boolean
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
