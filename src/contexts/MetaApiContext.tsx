@@ -320,6 +320,11 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const candleManagedTradesRef = useRef<CandleManagedTrade[]>([]);
   const closingTradeTicketsRef = useRef<Set<number>>(new Set());
 
+  // Server-side auto-trading state
+  const [serverAutoTradeActive, setServerAutoTradeActive] = useState(false);
+  const [serverSessionId, setServerSessionId] = useState<string | null>(null);
+  const [isStartingServerAutoTrade, setIsStartingServerAutoTrade] = useState(false);
+
   const [savedCredentials] = useState(() => loadCredentials());
 
   useEffect(() => {
