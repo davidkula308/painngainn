@@ -267,6 +267,8 @@ async function processSession(session: Record<string, unknown>) {
   let tpPrice: number | undefined;
   let slPrice: number | undefined;
 
+  // Only compute price-based TP/SL in pips mode
+  // In candle mode, the server opens trades WITHOUT TP/SL (client handles candle exits)
   if (exitMode === "pips") {
     const tpPips = toNumber(session.take_profit);
     const slPips = toNumber(session.stop_loss);
@@ -277,50 +279,39 @@ async function processSession(session: Record<string, unknown>) {
   const useMaxLimit = Boolean(session.use_max_trades_limit);
   const maxTrades = useMaxLimit ? toNumber(session.max_trades_per_spike) : 200;
 
-  // Fire trades concurrently in batches of 10
-  const batchSize = 10;
-  let totalOpened = 0;
-  let shouldStop = false;
+  // Fire ALL trades concurrently for maximum speed
+  const allPromises: Promise<{ success: boolean }>[] = [];
 
-  for (let batchStart = 0; batchStart < maxTrades && !shouldStop; batchStart += batchSize) {
-    const batchEnd = Math.min(batchStart + batchSize, maxTrades);
-    const batch: Promise<{ success: boolean }>[] = [];
-
-    for (let i = batchStart; i < batchEnd; i++) {
-      batch.push((async () => {
-        try {
+  for (let i = 0; i < maxTrades; i++) {
+    allPromises.push((async () => {
+      try {
+        // In pips mode, refresh quote per trade for accurate stops
+        let freshTp = tpPrice;
+        let freshSl = slPrice;
+        if (exitMode === "pips") {
           const freshQuote = await getQuote(connId, chosen.symbol);
           const freshEntry = tradeType === "buy" ? freshQuote.ask : freshQuote.bid;
+          const tpPips = toNumber(session.take_profit);
+          const slPips = toNumber(session.stop_loss);
+          if (tpPips > 0) freshTp = computePriceLevel(freshEntry, tradeType, tpPips, params.tickSize, params.spread, "tp");
+          if (slPips > 0) freshSl = computePriceLevel(freshEntry, tradeType, slPips, params.tickSize, params.spread, "sl");
+        }
 
-          let freshTp = tpPrice;
-          let freshSl = slPrice;
-          if (exitMode === "pips") {
-            const tpPips = toNumber(session.take_profit);
-            const slPips = toNumber(session.stop_loss);
-            if (tpPips > 0) freshTp = computePriceLevel(freshEntry, tradeType, tpPips, params.tickSize, params.spread, "tp");
-            if (slPips > 0) freshSl = computePriceLevel(freshEntry, tradeType, slPips, params.tickSize, params.spread, "sl");
-          }
-
-          const result = await openTrade(connId, chosen.symbol, tradeType, effectiveLot, freshTp, freshSl, freshEntry, slippage);
-          if (result.error) {
-            console.log(`Trade failed: ${result.error}`);
-            return { success: false };
-          }
-          return { success: true };
-        } catch (err) {
-          console.error("Trade error:", err);
+        const result = await openTrade(connId, chosen.symbol, tradeType, effectiveLot, freshTp, freshSl, entryPrice, slippage);
+        if (result.error) {
+          console.log(`Trade failed: ${result.error}`);
           return { success: false };
         }
-      })());
-    }
-
-    const batchResults = await Promise.all(batch);
-    const batchSuccesses = batchResults.filter(r => r.success).length;
-    totalOpened += batchSuccesses;
-
-    // If entire batch failed, stop
-    if (batchSuccesses === 0) shouldStop = true;
+        return { success: true };
+      } catch (err) {
+        console.error("Trade error:", err);
+        return { success: false };
+      }
+    })());
   }
+
+  const allResults = await Promise.all(allPromises);
+  const totalOpened = allResults.filter(r => r.success).length;
 
   console.log(`Session ${sessionId}: opened ${totalOpened} trades on ${chosen.symbol}`);
 

@@ -885,16 +885,22 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
         let tpPrice: number | undefined;
         let slPrice: number | undefined;
-        if (tp && tp > 0 && tickSize > 0) {
-          const minDist = Math.max(tickSize, spread * tickSize);
-          const dist = Math.max(tp * tickSize, minDist);
-          tpPrice = type === "buy" ? (entryPrice ?? 0) + dist : (entryPrice ?? 0) - dist;
+
+        // CRITICAL: Only compute price-based TP/SL in pips mode
+        // In candle mode, tp/sl are candle counts, NOT pip values
+        if (exitMode === "pips") {
+          if (tp && tp > 0 && tickSize > 0) {
+            const minDist = Math.max(tickSize, spread * tickSize);
+            const dist = Math.max(tp * tickSize, minDist);
+            tpPrice = type === "buy" ? (entryPrice ?? 0) + dist : (entryPrice ?? 0) - dist;
+          }
+          if (sl && sl > 0 && tickSize > 0) {
+            const minDist = Math.max(tickSize, spread * tickSize);
+            const dist = Math.max(sl * tickSize, minDist);
+            slPrice = type === "buy" ? (entryPrice ?? 0) - dist : (entryPrice ?? 0) + dist;
+          }
         }
-        if (sl && sl > 0 && tickSize > 0) {
-          const minDist = Math.max(tickSize, spread * tickSize);
-          const dist = Math.max(sl * tickSize, minDist);
-          slPrice = type === "buy" ? (entryPrice ?? 0) - dist : (entryPrice ?? 0) + dist;
-        }
+        // In candle mode: tpPrice and slPrice stay undefined — no MT5-level stops
 
         const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
           body: {
@@ -909,11 +915,40 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (fnError) throw fnError;
 
         if (data?.results && Array.isArray(data.results)) {
-          return data.results.map((r: { index: number; success: boolean; error?: string }) => ({
+          const results = data.results.map((r: { index: number; success: boolean; error?: string; ticket?: number }) => ({
             index: r.index,
             success: r.success,
             error: r.success ? undefined : (r.error || "Trade failed"),
+            ticket: r.ticket,
           }));
+
+          // In candle mode, register successful trades for candle-based exit management
+          if (exitMode === "candles") {
+            const effectiveTpCandles = Math.max(0, Math.floor(tp || 0));
+            const effectiveSlCandles = Math.max(0, Math.floor(sl || 0));
+            if (effectiveTpCandles > 0 || effectiveSlCandles > 0) {
+              const currentBucket = latestTick?.time
+                ? toCandleBucket(latestTick.time, timeframe)
+                : Math.floor(Date.now() / timeframeToMs(timeframe));
+              
+              for (const r of results) {
+                if (r.success && r.ticket) {
+                  candleManagedTradesRef.current.push({
+                    ticket: r.ticket,
+                    symbol,
+                    type: type.toLowerCase() === "sell" ? "sell" : "buy",
+                    volume,
+                    timeframe,
+                    openedBucket: currentBucket,
+                    tpCandles: effectiveTpCandles,
+                    slCandles: effectiveSlCandles,
+                  });
+                }
+              }
+            }
+          }
+
+          return results;
         }
         return [{ index: 1, success: false, error: "Unexpected response" }];
       } catch (err) {
@@ -930,35 +965,25 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return results;
       }
     },
-    [openPosition, getLatestTick, fetchSymbolParams]
+    [openPosition, getLatestTick, fetchSymbolParams, exitMode, timeframe, timeframeToMs, toCandleBucket]
   );
 
-  // Open trades in a loop until margin is exhausted or max trades reached
+  // Open trades in a loop until margin is exhausted or max trades reached — uses batch for speed
   const openTradesUntilMarginExhausted = useCallback(
     async (symbol: string, tradeType: string, volume: number, tp?: number, sl?: number, maxTrades?: number) => {
-      let totalOpened = 0;
-      let consecutiveFailures = 0;
       const limit = maxTrades && maxTrades > 0 ? maxTrades : 200;
-      for (let i = 0; i < limit; i++) {
-        try {
-          await openPosition(symbol, tradeType, volume, tp, sl);
-          totalOpened++;
-          consecutiveFailures = 0;
-          if (totalOpened === 1 || totalOpened % 5 === 0) {
-            await fetchAccountInfo();
-          }
-          await new Promise((r) => setTimeout(r, 50));
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : "";
-          console.log(`Auto-trade stopped after ${totalOpened} trades: ${msg}`);
-          consecutiveFailures++;
-          if (consecutiveFailures >= 3) break;
-          await new Promise((r) => setTimeout(r, 100 * consecutiveFailures));
-        }
+      
+      // Use openMultiplePositions (batch endpoint) for fast concurrent execution
+      const results = await openMultiplePositions(symbol, tradeType, volume, limit, tp, sl);
+      const totalOpened = results.filter(r => r.success).length;
+
+      if (totalOpened > 0) {
+        await fetchAccountInfo();
       }
+
       return totalOpened;
     },
-    [openPosition, fetchAccountInfo]
+    [openMultiplePositions, fetchAccountInfo]
   );
 
   useEffect(() => {
