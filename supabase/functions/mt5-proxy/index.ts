@@ -481,56 +481,32 @@ serve(async (req) => {
           });
         }
 
+        // Try to find and modify the order — reduced wait for speed
         const orderSnapshot = await waitForOpenedOrder(
-          connectionId,
-          symbol,
-          operation,
-          numericVolume,
-          openedTicket,
-          requestedAt,
-          directOrder
+          connectionId, symbol, operation, numericVolume,
+          openedTicket, requestedAt, directOrder
         );
 
         if (orderSnapshot) {
-          if (hasExpectedStops(orderSnapshot, tpNum, slNum)) {
+          try {
+            await applyStopsToOpenedOrder(connectionId, orderSnapshot, tpNum, slNum);
             responsePayload.ticket = orderSnapshot.ticket;
             responsePayload.stopsApplied = true;
-            return new Response(JSON.stringify(responsePayload), {
-              headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-          }
-
-          try {
-            const modifyResult = await applyStopsToOpenedOrder(connectionId, orderSnapshot, tpNum, slNum);
-            const verifiedOrder = await waitForOpenedOrder(
-              connectionId,
-              symbol,
-              operation,
-              numericVolume,
-              orderSnapshot.ticket,
-              requestedAt,
-              null
-            );
-
-            responsePayload.ticket = orderSnapshot.ticket;
-            responsePayload.stopsApplied = hasExpectedStops(verifiedOrder, tpNum, slNum);
-            responsePayload.modifyResult = modifyResult;
-
-            if (!responsePayload.stopsApplied) {
-              responsePayload.warning = "Trade opened, but TP/SL could not be verified after modification";
-            }
           } catch (modifyError) {
-            console.error("Failed to apply TP/SL after order open:", modifyError);
+            console.error("Failed to apply TP/SL:", modifyError);
             responsePayload.ticket = orderSnapshot.ticket;
             responsePayload.stopsApplied = false;
-            responsePayload.warning = modifyError instanceof Error
-              ? modifyError.message
-              : "Trade opened, but TP/SL modification failed";
+            responsePayload.warning = "Trade opened, but TP/SL modification failed";
           }
         } else {
           responsePayload.stopsApplied = false;
-          responsePayload.warning = "Trade opened, but the new position could not be resolved for TP/SL update";
+          responsePayload.warning = "Trade opened, but could not resolve position for TP/SL";
         }
+      } else {
+        // No stops needed — return immediately without waiting
+        const ticket = extractTicket(openedOrderResult);
+        if (ticket) responsePayload.ticket = ticket;
+        responsePayload.stopsApplied = true;
       }
 
       return new Response(JSON.stringify(responsePayload), {
