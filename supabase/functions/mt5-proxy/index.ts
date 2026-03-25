@@ -251,7 +251,8 @@ async function waitForOpenedOrder(
     return directOrder;
   }
 
-  const attempts = 20;
+  // Reduced attempts for faster response — 5 attempts max (was 20)
+  const attempts = 5;
 
   for (let attempt = 0; attempt < attempts; attempt++) {
     if (openedTicket) {
@@ -262,7 +263,7 @@ async function waitForOpenedOrder(
     const latestMatch = await findLatestOpenedOrder(connectionId, symbol, operation, volume, requestedAt);
     if (latestMatch) return latestMatch;
 
-    await new Promise((resolve) => setTimeout(resolve, 700 + attempt * 250));
+    await new Promise((resolve) => setTimeout(resolve, 300 + attempt * 200));
   }
 
   return null;
