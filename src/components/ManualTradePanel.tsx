@@ -37,10 +37,6 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
       toast.error("Select a symbol and connect first");
       return;
     }
-    if (dailyProfitReached || dailyLossReached) {
-      toast.error("Daily limit reached — trading paused");
-      return;
-    }
     setIsTrading(true);
     try {
       const exitTp = exitMode === "candles" ? tpCandles : takeProfit;
