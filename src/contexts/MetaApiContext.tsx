@@ -1223,20 +1223,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [connectionId, isConnected, fetchOpenPositions]);
 
   // Set starting balance on connect
-  useEffect(() => {
-    if (accountInfo && startingBalance === 0) {
-      setStartingBalance(accountInfo.balance);
-    }
-  }, [accountInfo, startingBalance]);
-
-  // Track daily P/L from balance change
-  useEffect(() => {
-    if (!accountInfo || startingBalance === 0) return;
-    const pnl = accountInfo.balance - startingBalance;
-    setDailyClosedPnl(pnl);
-    setDailyProfitReached(dailyMaxProfit > 0 && pnl >= dailyMaxProfit);
-    setDailyLossReached(dailyMaxLoss > 0 && pnl <= -dailyMaxLoss);
-  }, [accountInfo, startingBalance, dailyMaxProfit, dailyMaxLoss]);
 
   // Update effective lot based on martingale/scaling
   useEffect(() => {
