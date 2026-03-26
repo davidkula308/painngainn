@@ -335,7 +335,7 @@ async function processSession(session: Record<string, unknown>) {
     connection_id: connId,
     processed_spike_keys: trimmedKeys,
     last_spike_key: chosen.key,
-    daily_closed_pnl: pnl,
+    
     updated_at: new Date().toISOString(),
   }).eq("id", sessionId);
 }
