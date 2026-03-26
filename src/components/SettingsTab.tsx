@@ -48,10 +48,6 @@ function playPreviewSound(soundType: string) {
 
 const SettingsTab = () => {
   const {
-    dailyMaxProfit, setDailyMaxProfit,
-    dailyMaxLoss, setDailyMaxLoss,
-    dailyProfitReached, dailyLossReached,
-    dailyClosedPnl, startingBalance,
     spikeSound, setSpikeSound,
     tradeSound, setTradeSound,
   } = useMetaApi();
