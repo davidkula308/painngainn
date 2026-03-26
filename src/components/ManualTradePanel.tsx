@@ -21,7 +21,7 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
     openMultiplePositions, accountInfo, watchList, isConnected,
     autoTradeSymbols, autoTradeExcludedSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
     maxTradesPerSpike, setMaxTradesPerSpike, useMaxTradesLimit, setUseMaxTradesLimit,
-    dailyProfitReached, dailyLossReached,
+    
     martingaleEnabled, setMartingaleEnabled, martingaleMultiplier, setMartingaleMultiplier,
     lotScalingEnabled, setLotScalingEnabled, lotScalingMultiplier, setLotScalingMultiplier,
     serverAutoTradeActive, isStartingServerAutoTrade, startServerAutoTrade, stopServerAutoTrade,
