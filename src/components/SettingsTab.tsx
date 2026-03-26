@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import { useMetaApi } from "@/contexts/MetaApiContext";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import { Download, Volume2 } from "lucide-react";
 
@@ -48,10 +46,6 @@ function playPreviewSound(soundType: string) {
 
 const SettingsTab = () => {
   const {
-    dailyMaxProfit, setDailyMaxProfit,
-    dailyMaxLoss, setDailyMaxLoss,
-    dailyProfitReached, dailyLossReached,
-    dailyClosedPnl, startingBalance,
     spikeSound, setSpikeSound,
     tradeSound, setTradeSound,
   } = useMetaApi();
@@ -153,57 +147,6 @@ const SettingsTab = () => {
         </div>
       </div>
 
-      {/* Daily Limits */}
-      <div className="bg-card border border-border rounded-lg p-4 space-y-3">
-        <h2 className="text-sm font-semibold">Daily Trading Limits</h2>
-        <p className="text-[10px] text-muted-foreground">
-          App tracks closed trade P/L from session start balance and stops trading when limits are hit.
-        </p>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Max Daily Profit ($)</Label>
-            <Input
-              type="number"
-              min="0"
-              value={dailyMaxProfit || ""}
-              onChange={(e) => setDailyMaxProfit(Number(e.target.value) || 0)}
-              className="bg-muted font-mono text-sm h-8"
-              placeholder="100"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Max Daily Loss ($)</Label>
-            <Input
-              type="number"
-              min="0"
-              value={dailyMaxLoss || ""}
-              onChange={(e) => setDailyMaxLoss(Number(e.target.value) || 0)}
-              className="bg-muted font-mono text-sm h-8"
-              placeholder="100"
-            />
-          </div>
-        </div>
-
-        <div className="bg-muted rounded p-2 text-xs font-mono space-y-1">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Starting Balance:</span>
-            <span>${startingBalance.toFixed(2)}</span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Closed P/L Today:</span>
-            <span className={dailyClosedPnl >= 0 ? "text-bullish" : "text-bearish"}>
-              {dailyClosedPnl >= 0 ? "+" : ""}${dailyClosedPnl.toFixed(2)}
-            </span>
-          </div>
-          {dailyProfitReached && (
-            <p className="text-bullish font-semibold">✓ Daily profit target reached — trading paused</p>
-          )}
-          {dailyLossReached && (
-            <p className="text-bearish font-semibold">✗ Daily loss limit reached — trading paused</p>
-          )}
-        </div>
-      </div>
     </div>
   );
 };

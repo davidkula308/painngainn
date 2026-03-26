@@ -199,13 +199,6 @@ interface MetaApiContextType {
   maxTradesPerSpike: number;
   useMaxTradesLimit: boolean;
   openPositions: OpenPositionInfo[];
-  // Daily limits
-  dailyMaxProfit: number;
-  dailyMaxLoss: number;
-  dailyProfitReached: boolean;
-  dailyLossReached: boolean;
-  dailyClosedPnl: number;
-  startingBalance: number;
   // Sounds
   spikeSound: string;
   tradeSound: string;
@@ -246,8 +239,6 @@ interface MetaApiContextType {
   setTimeframe: (v: string) => void;
   setMaxTradesPerSpike: (v: number) => void;
   setUseMaxTradesLimit: (v: boolean) => void;
-  setDailyMaxProfit: (v: number) => void;
-  setDailyMaxLoss: (v: number) => void;
   setSpikeSound: (v: string) => void;
   setTradeSound: (v: string) => void;
   setMartingaleEnabled: (v: boolean) => void;
@@ -291,13 +282,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [useMaxTradesLimit, setUseMaxTradesLimit] = useState(false);
   const [openPositions, setOpenPositions] = useState<OpenPositionInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  // Daily limits
-  const [dailyMaxProfit, setDailyMaxProfit] = useState(100);
-  const [dailyMaxLoss, setDailyMaxLoss] = useState(100);
-  const [dailyClosedPnl, setDailyClosedPnl] = useState(0);
-  const [startingBalance, setStartingBalance] = useState(0);
-  const [dailyProfitReached, setDailyProfitReached] = useState(false);
-  const [dailyLossReached, setDailyLossReached] = useState(false);
   // Sounds
   const [spikeSound, setSpikeSound] = useState("beep");
   const [tradeSound, setTradeSound] = useState("ding");
@@ -1106,12 +1090,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return;
       }
 
-      // Check daily limits
-      if (dailyProfitReached || dailyLossReached) {
-        console.log("Daily limit reached, skipping auto-trade");
-        return;
-      }
-
       const sorted = [...newSpikes].sort(
         (a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol)
       );
@@ -1157,8 +1135,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     exitMode,
     useMaxTradesLimit,
     maxTradesPerSpike,
-    dailyProfitReached,
-    dailyLossReached,
     martingaleEnabled,
     lotScalingEnabled,
     currentEffectiveLot,
@@ -1247,20 +1223,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [connectionId, isConnected, fetchOpenPositions]);
 
   // Set starting balance on connect
-  useEffect(() => {
-    if (accountInfo && startingBalance === 0) {
-      setStartingBalance(accountInfo.balance);
-    }
-  }, [accountInfo, startingBalance]);
-
-  // Track daily P/L from balance change
-  useEffect(() => {
-    if (!accountInfo || startingBalance === 0) return;
-    const pnl = accountInfo.balance - startingBalance;
-    setDailyClosedPnl(pnl);
-    setDailyProfitReached(dailyMaxProfit > 0 && pnl >= dailyMaxProfit);
-    setDailyLossReached(dailyMaxLoss > 0 && pnl <= -dailyMaxLoss);
-  }, [accountInfo, startingBalance, dailyMaxProfit, dailyMaxLoss]);
 
   // Update effective lot based on martingale/scaling
   useEffect(() => {
@@ -1331,8 +1293,8 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         timeframe,
         use_max_trades_limit: useMaxTradesLimit,
         max_trades_per_spike: maxTradesPerSpike,
-        daily_max_profit: dailyMaxProfit,
-        daily_max_loss: dailyMaxLoss,
+        daily_max_profit: 0,
+        daily_max_loss: 0,
         martingale_enabled: martingaleEnabled,
         martingale_multiplier: martingaleMultiplier,
         lot_scaling_enabled: lotScalingEnabled,
@@ -1358,9 +1320,9 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [
     connectionId, autoTradeSymbols, autoTradeExcludedSymbols, autoTradeLotSize,
     exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
-    useMaxTradesLimit, maxTradesPerSpike, dailyMaxProfit, dailyMaxLoss,
+    useMaxTradesLimit, maxTradesPerSpike,
     martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
-    startingBalance, accountInfo,
+    accountInfo,
   ]);
 
   const stopServerAutoTrade = useCallback(async () => {
@@ -1385,8 +1347,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         autoTrade, autoTradeSymbols, autoTradeExcludedSymbols, lotSize, autoTradeLotSize,
         exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
         maxTradesPerSpike, useMaxTradesLimit, openPositions,
-        dailyMaxProfit, dailyMaxLoss, dailyProfitReached, dailyLossReached,
-        dailyClosedPnl, startingBalance,
         spikeSound, tradeSound,
         martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
         serverAutoTradeActive, serverSessionId, isStartingServerAutoTrade,
@@ -1397,7 +1357,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setAutoTrade, setAutoTradeSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
         setLotSize, setAutoTradeLotSize, setExitMode, setTakeProfit, setStopLoss, setTpCandles, setSlCandles,
         setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit,
-        setDailyMaxProfit, setDailyMaxLoss, setSpikeSound, setTradeSound,
+        setSpikeSound, setTradeSound,
         setMartingaleEnabled, setMartingaleMultiplier, setLotScalingEnabled, setLotScalingMultiplier,
         savedCredentials, error,
       }}

@@ -21,7 +21,7 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
     openMultiplePositions, accountInfo, watchList, isConnected,
     autoTradeSymbols, autoTradeExcludedSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
     maxTradesPerSpike, setMaxTradesPerSpike, useMaxTradesLimit, setUseMaxTradesLimit,
-    dailyProfitReached, dailyLossReached,
+    
     martingaleEnabled, setMartingaleEnabled, martingaleMultiplier, setMartingaleMultiplier,
     lotScalingEnabled, setLotScalingEnabled, lotScalingMultiplier, setLotScalingMultiplier,
     serverAutoTradeActive, isStartingServerAutoTrade, startServerAutoTrade, stopServerAutoTrade,
@@ -35,10 +35,6 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
   const executeTrades = async (type: "buy" | "sell") => {
     if (!currentSymbol || !isConnected) {
       toast.error("Select a symbol and connect first");
-      return;
-    }
-    if (dailyProfitReached || dailyLossReached) {
-      toast.error("Daily limit reached — trading paused");
       return;
     }
     setIsTrading(true);
@@ -235,13 +231,6 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
         )}
       </div>
 
-      {/* Daily limit warnings */}
-      {(dailyProfitReached || dailyLossReached) && (
-        <div className="bg-bearish/10 rounded p-2 text-[10px] font-semibold text-bearish">
-          {dailyProfitReached && <p>✓ Daily profit target reached — trading paused</p>}
-          {dailyLossReached && <p>✗ Daily loss limit reached — trading paused</p>}
-        </div>
-      )}
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">Symbol</Label>
         <select
