@@ -217,52 +217,6 @@ async function processSession(session: Record<string, unknown>) {
   }
 
   const account = await getAccountInfo(connId);
-  const startingBalance = toNumber(session.starting_balance);
-  const dailyMaxProfit = toNumber(session.daily_max_profit);
-  const dailyMaxLoss = toNumber(session.daily_max_loss);
-  const resetDailyState = shouldResetDailyLimits(session);
-
-  if (resetDailyState) {
-    const resetTimestamp = new Date().toISOString();
-    await sb.from("trading_sessions").update({
-      starting_balance: account.balance,
-      daily_closed_pnl: 0,
-      updated_at: resetTimestamp,
-    }).eq("id", sessionId);
-
-    session.starting_balance = account.balance;
-    session.daily_closed_pnl = 0;
-    session.updated_at = resetTimestamp;
-    console.log(`Session ${sessionId}: reset daily balance baseline to ${account.balance}`);
-  }
-
-  if (startingBalance <= 0 && !resetDailyState) {
-    await sb.from("trading_sessions").update({ starting_balance: account.balance }).eq("id", sessionId);
-  }
-
-  const currentStartingBalance = resetDailyState
-    ? account.balance
-    : startingBalance > 0
-      ? startingBalance
-      : account.balance;
-  const pnl = account.balance - currentStartingBalance;
-
-  if (dailyMaxProfit > 0 && pnl >= dailyMaxProfit) {
-    await sb.from("trading_sessions").update({
-      daily_closed_pnl: pnl,
-      updated_at: new Date().toISOString(),
-    }).eq("id", sessionId);
-    console.log(`Session ${sessionId}: daily profit target reached (${pnl})`);
-    return;
-  }
-  if (dailyMaxLoss > 0 && pnl <= -dailyMaxLoss) {
-    await sb.from("trading_sessions").update({
-      daily_closed_pnl: pnl,
-      updated_at: new Date().toISOString(),
-    }).eq("id", sessionId);
-    console.log(`Session ${sessionId}: daily loss limit reached (${pnl})`);
-    return;
-  }
 
   const autoTradeSymbols = (session.auto_trade_symbols as string[]) || [];
   const excludedSymbols = (session.excluded_symbols as string[]) || [];

@@ -1357,7 +1357,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setAutoTrade, setAutoTradeSymbols, toggleAutoTradeSymbol, toggleAutoTradeExclusion,
         setLotSize, setAutoTradeLotSize, setExitMode, setTakeProfit, setStopLoss, setTpCandles, setSlCandles,
         setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit,
-        setDailyMaxProfit, setDailyMaxLoss, setSpikeSound, setTradeSound,
+        setSpikeSound, setTradeSound,
         setMartingaleEnabled, setMartingaleMultiplier, setLotScalingEnabled, setLotScalingMultiplier,
         savedCredentials, error,
       }}
