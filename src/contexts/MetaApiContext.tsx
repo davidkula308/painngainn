@@ -239,8 +239,6 @@ interface MetaApiContextType {
   setTimeframe: (v: string) => void;
   setMaxTradesPerSpike: (v: number) => void;
   setUseMaxTradesLimit: (v: boolean) => void;
-  setDailyMaxProfit: (v: number) => void;
-  setDailyMaxLoss: (v: number) => void;
   setSpikeSound: (v: string) => void;
   setTradeSound: (v: string) => void;
   setMartingaleEnabled: (v: boolean) => void;
