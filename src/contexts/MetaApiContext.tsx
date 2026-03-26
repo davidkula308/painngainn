@@ -199,13 +199,6 @@ interface MetaApiContextType {
   maxTradesPerSpike: number;
   useMaxTradesLimit: boolean;
   openPositions: OpenPositionInfo[];
-  // Daily limits
-  dailyMaxProfit: number;
-  dailyMaxLoss: number;
-  dailyProfitReached: boolean;
-  dailyLossReached: boolean;
-  dailyClosedPnl: number;
-  startingBalance: number;
   // Sounds
   spikeSound: string;
   tradeSound: string;
