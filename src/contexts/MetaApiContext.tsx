@@ -1320,7 +1320,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [
     connectionId, autoTradeSymbols, autoTradeExcludedSymbols, autoTradeLotSize,
     exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
-    useMaxTradesLimit, maxTradesPerSpike, dailyMaxProfit, dailyMaxLoss,
+    useMaxTradesLimit, maxTradesPerSpike,
     martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
     startingBalance, accountInfo,
   ]);
