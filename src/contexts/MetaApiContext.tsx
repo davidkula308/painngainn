@@ -1135,8 +1135,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     exitMode,
     useMaxTradesLimit,
     maxTradesPerSpike,
-    dailyProfitReached,
-    dailyLossReached,
     martingaleEnabled,
     lotScalingEnabled,
     currentEffectiveLot,
