@@ -126,6 +126,23 @@ function shouldResetDailyLimits(session: Record<string, unknown>): boolean {
   return Boolean(todayKey && lastTouchedKey && todayKey !== lastTouchedKey);
 }
 
+function getSessionTimestamp(session: Record<string, unknown>): number {
+  const updatedAt = Date.parse(String(session.updated_at || ""));
+  if (!Number.isNaN(updatedAt)) return updatedAt;
+  const createdAt = Date.parse(String(session.created_at || ""));
+  return Number.isNaN(createdAt) ? 0 : createdAt;
+}
+
+function getSessionIdentity(session: Record<string, unknown>): string {
+  const login = String(session.credentials_login || "").trim();
+  const host = String(session.credentials_host || "").trim();
+  const connectionId = String(session.connection_id || "").trim();
+
+  if (login && host) return `${login}@${host}`;
+  if (connectionId) return `connection:${connectionId}`;
+  return `session:${String(session.id || "")}`;
+}
+
 async function getAccountInfo(connId: string) {
   const data = mt5Json(`${MT5_API_URL}/AccountSummary?id=${encodeURIComponent(connId)}`);
   const d = (await data) as Record<string, unknown>;
@@ -391,8 +408,31 @@ serve(async (req) => {
         });
       }
 
+      const sortedSessions = [...sessions].sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a));
+      const seenIdentities = new Set<string>();
+      const uniqueSessions: typeof sortedSessions = [];
+      const duplicateIds: string[] = [];
+
+      for (const session of sortedSessions) {
+        const identity = getSessionIdentity(session);
+        if (seenIdentities.has(identity)) {
+          duplicateIds.push(String(session.id));
+          continue;
+        }
+
+        seenIdentities.add(identity);
+        uniqueSessions.push(session);
+      }
+
+      if (duplicateIds.length > 0) {
+        await sb
+          .from("trading_sessions")
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .in("id", duplicateIds);
+      }
+
       const results: { id: string; status: string }[] = [];
-      for (const session of sessions) {
+      for (const session of uniqueSessions) {
         try {
           await processSession(session);
           results.push({ id: session.id, status: "ok" });
@@ -409,8 +449,65 @@ serve(async (req) => {
 
     if (action === "startSession") {
       const { config } = body;
-      const { data, error: insertErr } = await sb.from("trading_sessions").insert(config).select().single();
+      const now = new Date().toISOString();
+      const identityLogin = String(config?.credentials_login || "").trim();
+      const identityHost = String(config?.credentials_host || "").trim();
+      const identityConnectionId = String(config?.connection_id || "").trim();
+
+      let existingSessionQuery = sb
+        .from("trading_sessions")
+        .select("*")
+        .eq("is_active", true);
+
+      if (identityLogin && identityHost) {
+        existingSessionQuery = existingSessionQuery
+          .eq("credentials_login", identityLogin)
+          .eq("credentials_host", identityHost);
+      } else if (identityConnectionId) {
+        existingSessionQuery = existingSessionQuery.eq("connection_id", identityConnectionId);
+      }
+
+      const { data: existingSessions, error: existingErr } = await existingSessionQuery.order("updated_at", { ascending: false });
+      if (existingErr) throw existingErr;
+
+      const [latestSession, ...duplicateSessions] = existingSessions || [];
+
+      if (duplicateSessions.length > 0) {
+        await sb
+          .from("trading_sessions")
+          .update({ is_active: false, updated_at: now })
+          .in("id", duplicateSessions.map((session) => session.id));
+      }
+
+      if (latestSession) {
+        const payload = {
+          ...config,
+          is_active: true,
+          updated_at: now,
+        };
+
+        const { data, error: updateErr } = await sb
+          .from("trading_sessions")
+          .update(payload)
+          .eq("id", latestSession.id)
+          .select()
+          .single();
+
+        if (updateErr) throw updateErr;
+
+        return new Response(JSON.stringify(data), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const { data, error: insertErr } = await sb
+        .from("trading_sessions")
+        .insert({ ...config, updated_at: now })
+        .select()
+        .single();
+
       if (insertErr) throw insertErr;
+
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -433,7 +530,13 @@ serve(async (req) => {
     }
 
     if (action === "getSession") {
-      const { data, error: dbErr } = await sb.from("trading_sessions").select("*").eq("is_active", true).limit(1).maybeSingle();
+      const { data, error: dbErr } = await sb
+        .from("trading_sessions")
+        .select("*")
+        .eq("is_active", true)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
       if (dbErr) throw dbErr;
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },

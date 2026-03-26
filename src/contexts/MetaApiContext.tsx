@@ -922,6 +922,10 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ticket: r.ticket,
           }));
 
+          if (results.some((result) => result.success)) {
+            void fetchAccountInfo();
+          }
+
           // In candle mode, register successful trades for candle-based exit management
           if (exitMode === "candles") {
             const effectiveTpCandles = Math.max(0, Math.floor(tp || 0));
@@ -952,20 +956,26 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         return [{ index: 1, success: false, error: "Unexpected response" }];
       } catch (err) {
-        // Fallback to sequential if batch fails
-        const results: TradeResult[] = [];
-        for (let i = 0; i < count; i++) {
-          try {
-            await openPosition(symbol, type, volume, tp, sl);
-            results.push({ index: i + 1, success: true });
-          } catch (e: unknown) {
-            results.push({ index: i + 1, success: false, error: e instanceof Error ? e.message : "Trade failed" });
-          }
+        // Fallback to parallel singles if batch fails so manual trading does not queue one-by-one
+        const results = await Promise.all(
+          Array.from({ length: count }, async (_, index): Promise<TradeResult> => {
+            try {
+              await openPosition(symbol, type, volume, tp, sl);
+              return { index: index + 1, success: true };
+            } catch (e: unknown) {
+              return { index: index + 1, success: false, error: e instanceof Error ? e.message : "Trade failed" };
+            }
+          })
+        );
+
+        if (results.some((result) => result.success)) {
+          void fetchAccountInfo();
         }
+
         return results;
       }
     },
-    [openPosition, getLatestTick, fetchSymbolParams, exitMode, timeframe, timeframeToMs, toCandleBucket]
+    [openPosition, getLatestTick, fetchSymbolParams, exitMode, timeframe, timeframeToMs, toCandleBucket, fetchAccountInfo]
   );
 
   // Open trades in a loop until margin is exhausted or max trades reached — uses batch for speed
@@ -1289,6 +1299,20 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     setIsStartingServerAutoTrade(true);
     try {
+      let serverStartingBalance = accountInfo?.balance || 0;
+
+      try {
+        const { data: latestAccountData, error: latestAccountError } = await supabase.functions.invoke("mt5-proxy", {
+          body: { action: "accountInfo", connectionId },
+        });
+
+        if (!latestAccountError && latestAccountData) {
+          serverStartingBalance = toNumber(latestAccountData.balance) || serverStartingBalance;
+        }
+      } catch {
+        // Use the latest cached account balance if the refresh request fails.
+      }
+
       const config = {
         connection_id: connectionId,
         credentials_login: creds.login,
@@ -1313,7 +1337,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         martingale_multiplier: martingaleMultiplier,
         lot_scaling_enabled: lotScalingEnabled,
         lot_scaling_multiplier: lotScalingMultiplier,
-        starting_balance: startingBalance || accountInfo?.balance || 0,
+        starting_balance: serverStartingBalance,
         current_effective_lot: autoTradeLotSize,
       };
 

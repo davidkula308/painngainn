@@ -4,6 +4,7 @@ const MT5_API_URL = "https://mt5.mtapi.io";
 const MAX_RETRIES = 3;
 const DEFAULT_REQUEST_TIMEOUT_MS = 7000;
 const CONNECT_REQUEST_TIMEOUT_MS = 20000;
+const TRADE_REQUEST_TIMEOUT_MS = 3500;
 const PRICE_TOLERANCE = 1e-6;
 
 const corsHeaders = {
@@ -315,6 +316,37 @@ async function fetchWithRetry(
   throw new Error("MT5 request failed after retries");
 }
 
+async function fetchForTrade(url: string, timeoutMs = TRADE_REQUEST_TIMEOUT_MS): Promise<Response> {
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        return response;
+      }
+
+      const errorText = await response.text();
+      console.error(`Trade attempt ${attempt} failed with status ${response.status}: ${errorText}`);
+    } catch (err) {
+      clearTimeout(timeoutId);
+      console.error(`Trade attempt ${attempt} error:`, err);
+    }
+
+    if (attempt < 2) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+
+  throw new Error("Trade request timed out");
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -451,7 +483,7 @@ serve(async (req) => {
           url += `&takeprofit=${encodeURIComponent(String(tpNum))}`;
         }
         console.log("Trade URL:", url);
-        const response = await fetchWithRetry(url, { method: "GET" }, DEFAULT_REQUEST_TIMEOUT_MS);
+        const response = await fetchForTrade(url);
         return parseApiResponse(response);
       };
 
@@ -532,9 +564,7 @@ serve(async (req) => {
       const slippageNum = Number(slippage);
 
       // Get quote ONCE for all trades in the batch
-      const quote = await getQuote(connectionId, symbol);
-      const freshPrice = operation === "Buy" ? quote.ask : quote.bid;
-      const entryPrice = (Number.isFinite(freshPrice) && freshPrice! > 0) ? freshPrice! : priceNum;
+      const entryPrice = Number.isFinite(priceNum) && priceNum > 0 ? priceNum : undefined;
 
       // Pre-build the URL template (same for all trades)
       let baseUrl = `${MT5_API_URL}/OrderSendSafe?id=${encodeURIComponent(connectionId)}&symbol=${encodeURIComponent(symbol)}&operation=${encodeURIComponent(operation)}&volume=${encodeURIComponent(String(numericVolume))}`;
@@ -545,7 +575,7 @@ serve(async (req) => {
 
       const fireOrder = async (index: number): Promise<{ index: number; success: boolean; ticket?: number; error?: string }> => {
         try {
-          const response = await fetchWithRetry(baseUrl, { method: "GET" }, DEFAULT_REQUEST_TIMEOUT_MS);
+          const response = await fetchForTrade(baseUrl);
           const result = await parseApiResponse(response);
 
           if (isTradeFailurePayload(result)) {
