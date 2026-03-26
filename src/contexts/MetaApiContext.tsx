@@ -282,13 +282,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [useMaxTradesLimit, setUseMaxTradesLimit] = useState(false);
   const [openPositions, setOpenPositions] = useState<OpenPositionInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
-  // Daily limits
-  const [dailyMaxProfit, setDailyMaxProfit] = useState(100);
-  const [dailyMaxLoss, setDailyMaxLoss] = useState(100);
-  const [dailyClosedPnl, setDailyClosedPnl] = useState(0);
-  const [startingBalance, setStartingBalance] = useState(0);
-  const [dailyProfitReached, setDailyProfitReached] = useState(false);
-  const [dailyLossReached, setDailyLossReached] = useState(false);
   // Sounds
   const [spikeSound, setSpikeSound] = useState("beep");
   const [tradeSound, setTradeSound] = useState("ding");
