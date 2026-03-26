@@ -1090,12 +1090,6 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return;
       }
 
-      // Check daily limits
-      if (dailyProfitReached || dailyLossReached) {
-        console.log("Daily limit reached, skipping auto-trade");
-        return;
-      }
-
       const sorted = [...newSpikes].sort(
         (a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol)
       );
