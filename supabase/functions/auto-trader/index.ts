@@ -111,21 +111,6 @@ function toMinuteBucket(time: string): string {
   return Number.isNaN(ts) ? time : String(Math.floor(ts / 60000));
 }
 
-function toUtcDateKey(value: string | null | undefined): string {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-  return `${date.getUTCFullYear()}-${month}-${day}`;
-}
-
-function shouldResetDailyLimits(session: Record<string, unknown>): boolean {
-  const todayKey = toUtcDateKey(new Date().toISOString());
-  const lastTouchedKey = toUtcDateKey(String(session.updated_at || session.created_at || ""));
-  return Boolean(todayKey && lastTouchedKey && todayKey !== lastTouchedKey);
-}
-
 function getSessionTimestamp(session: Record<string, unknown>): number {
   const updatedAt = Date.parse(String(session.updated_at || ""));
   if (!Number.isNaN(updatedAt)) return updatedAt;
