@@ -231,13 +231,6 @@ const ManualTradePanel = ({ selectedSymbol }: ManualTradePanelProps) => {
         )}
       </div>
 
-      {/* Daily limit warnings */}
-      {(dailyProfitReached || dailyLossReached) && (
-        <div className="bg-bearish/10 rounded p-2 text-[10px] font-semibold text-bearish">
-          {dailyProfitReached && <p>✓ Daily profit target reached — trading paused</p>}
-          {dailyLossReached && <p>✗ Daily loss limit reached — trading paused</p>}
-        </div>
-      )}
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">Symbol</Label>
         <select
