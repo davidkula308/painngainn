@@ -245,6 +245,11 @@ interface MetaApiContextType {
   setMartingaleMultiplier: (v: number) => void;
   setLotScalingEnabled: (v: boolean) => void;
   setLotScalingMultiplier: (v: number) => void;
+  dailyMaxProfit: number;
+  dailyMaxLoss: number;
+  setDailyMaxProfit: (v: number) => void;
+  setDailyMaxLoss: (v: number) => void;
+  resetDailyPnl: () => Promise<void>;
   savedCredentials: { login: string; password: string; server: string } | null;
   error: string | null;
 }
