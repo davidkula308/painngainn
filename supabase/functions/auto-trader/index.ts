@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 const MT5_API_URL = "https://mt5.mtapi.io";
 const REQUEST_TIMEOUT_MS = 10000;
 const CONNECT_TIMEOUT_MS = 20000;
+const TRADE_TIMEOUT_MS = 8000;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
