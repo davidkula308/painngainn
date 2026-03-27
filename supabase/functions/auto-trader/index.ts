@@ -316,11 +316,43 @@ async function processSession(session: Record<string, unknown>) {
   const allKeys = [...processedKeys, ...newSpikes.map(s => s.key)];
   const trimmedKeys = allKeys.slice(-500);
 
+  // After trades fire, check if daily P/L limits have been reached
+  const updatedAccount = await getAccountInfo(connId);
+  const startingBalance = toNumber(session.starting_balance);
+  const dailyMaxProfit = toNumber(session.daily_max_profit);
+  const dailyMaxLoss = toNumber(session.daily_max_loss);
+  const dailyPnl = updatedAccount.balance - startingBalance;
+
+  let shouldDeactivate = false;
+  let deactivateReason = "";
+
+  if (dailyMaxProfit > 0 && dailyPnl >= dailyMaxProfit) {
+    shouldDeactivate = true;
+    deactivateReason = `Daily profit target reached: ${dailyPnl.toFixed(2)} >= ${dailyMaxProfit}`;
+  } else if (dailyMaxLoss > 0 && dailyPnl <= -dailyMaxLoss) {
+    shouldDeactivate = true;
+    deactivateReason = `Daily loss limit reached: ${dailyPnl.toFixed(2)} <= -${dailyMaxLoss}`;
+  }
+
+  if (shouldDeactivate) {
+    console.log(`Session ${sessionId}: ${deactivateReason} — pausing auto-trade`);
+    await sb.from("trading_sessions").update({
+      connection_id: connId,
+      processed_spike_keys: trimmedKeys,
+      last_spike_key: chosen.key,
+      is_active: false,
+      last_trade_result: deactivateReason,
+      daily_closed_pnl: dailyPnl,
+      updated_at: new Date().toISOString(),
+    }).eq("id", sessionId);
+    return;
+  }
+
   await sb.from("trading_sessions").update({
     connection_id: connId,
     processed_spike_keys: trimmedKeys,
     last_spike_key: chosen.key,
-    
+    daily_closed_pnl: dailyPnl,
     updated_at: new Date().toISOString(),
   }).eq("id", sessionId);
 }
