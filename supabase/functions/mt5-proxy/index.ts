@@ -575,7 +575,7 @@ serve(async (req) => {
 
       const fireOrder = async (index: number): Promise<{ index: number; success: boolean; ticket?: number; error?: string }> => {
         try {
-          const response = await fetchForTrade(baseUrl);
+          const response = await fetchForTrade(baseUrl, TRADE_REQUEST_TIMEOUT_MS);
           const result = await parseApiResponse(response);
 
           if (isTradeFailurePayload(result)) {
@@ -590,12 +590,21 @@ serve(async (req) => {
         }
       };
 
-      // Fire ALL trades concurrently (no batching delay)
-      const allPromises = [];
-      for (let i = 0; i < tradeCount; i++) {
-        allPromises.push(fireOrder(i + 1));
+      // Stagger trades in small groups of 3 to avoid overwhelming the MT5 API
+      const BATCH_SIZE = 3;
+      const allResults: { index: number; success: boolean; ticket?: number; error?: string }[] = [];
+      for (let i = 0; i < tradeCount; i += BATCH_SIZE) {
+        const chunk = [];
+        for (let j = i; j < Math.min(i + BATCH_SIZE, tradeCount); j++) {
+          chunk.push(fireOrder(j + 1));
+        }
+        const chunkResults = await Promise.all(chunk);
+        allResults.push(...chunkResults);
+        // Small delay between chunks to let MT5 breathe
+        if (i + BATCH_SIZE < tradeCount) {
+          await new Promise(r => setTimeout(r, 150));
+        }
       }
-      const allResults = await Promise.all(allPromises);
 
       const succeeded = allResults.filter(r => r.success).length;
       const failed = allResults.filter(r => !r.success).length;
