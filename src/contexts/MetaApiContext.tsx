@@ -1398,6 +1398,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit,
         setSpikeSound, setTradeSound,
         setMartingaleEnabled, setMartingaleMultiplier, setLotScalingEnabled, setLotScalingMultiplier,
+        dailyMaxProfit, dailyMaxLoss, setDailyMaxProfit, setDailyMaxLoss, resetDailyPnl,
         savedCredentials, error,
       }}
     >

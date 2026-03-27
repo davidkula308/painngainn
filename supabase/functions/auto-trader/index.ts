@@ -500,6 +500,20 @@ serve(async (req) => {
       });
     }
 
+    if (action === "resetDailyPnl") {
+      const { sessionId, startingBalance } = body;
+      await sb.from("trading_sessions").update({
+        starting_balance: startingBalance || 0,
+        daily_closed_pnl: 0,
+        is_active: true,
+        last_trade_result: null,
+        updated_at: new Date().toISOString(),
+      }).eq("id", sessionId);
+      return new Response(JSON.stringify({ reset: true }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     if (action === "getSession") {
       const { data, error: dbErr } = await sb
         .from("trading_sessions")
