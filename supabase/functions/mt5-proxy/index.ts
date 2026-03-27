@@ -4,7 +4,7 @@ const MT5_API_URL = "https://mt5.mtapi.io";
 const MAX_RETRIES = 3;
 const DEFAULT_REQUEST_TIMEOUT_MS = 7000;
 const CONNECT_REQUEST_TIMEOUT_MS = 20000;
-const TRADE_REQUEST_TIMEOUT_MS = 3500;
+const TRADE_REQUEST_TIMEOUT_MS = 8000;
 const PRICE_TOLERANCE = 1e-6;
 
 const corsHeaders = {
