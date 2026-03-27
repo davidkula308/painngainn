@@ -170,7 +170,7 @@ async function openTrade(
   if (slPrice && slPrice > 0) url += `&stoploss=${encodeURIComponent(String(slPrice))}`;
   if (tpPrice && tpPrice > 0) url += `&takeprofit=${encodeURIComponent(String(tpPrice))}`;
 
-  const data = await mt5Json(url);
+  const data = await mt5Json(url, TRADE_TIMEOUT_MS);
   const d = data as Record<string, unknown>;
   if (d.error) return { error: String(d.error) };
 
