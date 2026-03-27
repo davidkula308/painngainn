@@ -278,38 +278,46 @@ async function processSession(session: Record<string, unknown>) {
   const useMaxLimit = Boolean(session.use_max_trades_limit);
   const maxTrades = useMaxLimit ? toNumber(session.max_trades_per_spike) : 200;
 
-  // Fire ALL trades concurrently for maximum speed
-  const allPromises: Promise<{ success: boolean }>[] = [];
+  // Stagger trades in small groups of 3 to avoid overwhelming the MT5 API
+  const BATCH_SIZE = 3;
+  const allResults: { success: boolean }[] = [];
 
-  for (let i = 0; i < maxTrades; i++) {
-    allPromises.push((async () => {
-      try {
-        // In pips mode, refresh quote per trade for accurate stops
-        let freshTp = tpPrice;
-        let freshSl = slPrice;
-        if (exitMode === "pips") {
-          const freshQuote = await getQuote(connId, chosen.symbol);
-          const freshEntry = tradeType === "buy" ? freshQuote.ask : freshQuote.bid;
-          const tpPips = toNumber(session.take_profit);
-          const slPips = toNumber(session.stop_loss);
-          if (tpPips > 0) freshTp = computePriceLevel(freshEntry, tradeType, tpPips, params.tickSize, params.spread, "tp");
-          if (slPips > 0) freshSl = computePriceLevel(freshEntry, tradeType, slPips, params.tickSize, params.spread, "sl");
-        }
+  for (let i = 0; i < maxTrades; i += BATCH_SIZE) {
+    const chunk: Promise<{ success: boolean }>[] = [];
+    for (let j = i; j < Math.min(i + BATCH_SIZE, maxTrades); j++) {
+      chunk.push((async () => {
+        try {
+          let freshTp = tpPrice;
+          let freshSl = slPrice;
+          if (exitMode === "pips") {
+            const freshQuote = await getQuote(connId, chosen.symbol);
+            const freshEntry = tradeType === "buy" ? freshQuote.ask : freshQuote.bid;
+            const tpPips = toNumber(session.take_profit);
+            const slPips = toNumber(session.stop_loss);
+            if (tpPips > 0) freshTp = computePriceLevel(freshEntry, tradeType, tpPips, params.tickSize, params.spread, "tp");
+            if (slPips > 0) freshSl = computePriceLevel(freshEntry, tradeType, slPips, params.tickSize, params.spread, "sl");
+          }
 
-        const result = await openTrade(connId, chosen.symbol, tradeType, effectiveLot, freshTp, freshSl, entryPrice, slippage);
-        if (result.error) {
-          console.log(`Trade failed: ${result.error}`);
+          const result = await openTrade(connId, chosen.symbol, tradeType, effectiveLot, freshTp, freshSl, entryPrice, slippage);
+          if (result.error) {
+            console.log(`Trade failed: ${result.error}`);
+            return { success: false };
+          }
+          return { success: true };
+        } catch (err) {
+          console.error("Trade error:", err);
           return { success: false };
         }
-        return { success: true };
-      } catch (err) {
-        console.error("Trade error:", err);
-        return { success: false };
-      }
-    })());
+      })());
+    }
+    const chunkResults = await Promise.all(chunk);
+    allResults.push(...chunkResults);
+    // Small delay between chunks
+    if (i + BATCH_SIZE < maxTrades) {
+      await new Promise(r => setTimeout(r, 200));
+    }
   }
 
-  const allResults = await Promise.all(allPromises);
   const totalOpened = allResults.filter(r => r.success).length;
 
   console.log(`Session ${sessionId}: opened ${totalOpened} trades on ${chosen.symbol}`);
