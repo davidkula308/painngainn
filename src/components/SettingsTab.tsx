@@ -3,7 +3,7 @@ import { useMetaApi } from "@/contexts/MetaApiContext";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Download, Volume2 } from "lucide-react";
+import { Download, Volume2, RotateCcw, ShieldAlert } from "lucide-react";
 
 const SOUND_OPTIONS = [
   { value: "beep", label: "Beep (Default)" },
@@ -48,10 +48,14 @@ const SettingsTab = () => {
   const {
     spikeSound, setSpikeSound,
     tradeSound, setTradeSound,
+    dailyMaxProfit, dailyMaxLoss,
+    setDailyMaxProfit, setDailyMaxLoss,
+    resetDailyPnl,
   } = useMetaApi();
 
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -81,6 +85,15 @@ const SettingsTab = () => {
     setInstallPrompt(null);
   };
 
+  const handleResetDailyPnl = async () => {
+    setIsResetting(true);
+    try {
+      await resetDailyPnl();
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   return (
     <div className="max-w-lg mx-auto p-6 space-y-6">
       <h1 className="text-lg font-semibold">Settings</h1>
@@ -102,6 +115,49 @@ const SettingsTab = () => {
             </Button>
           </>
         )}
+      </div>
+
+      {/* Daily P/L Limits */}
+      <div className="bg-card border border-border rounded-lg p-4 space-y-3">
+        <h2 className="text-sm font-semibold flex items-center gap-2">
+          <ShieldAlert size={16} /> Daily Trading Limits
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          Trades fire normally. After positions close, if P/L exceeds these limits the auto-trader pauses. Set to 0 to disable.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Max Daily Profit ($)</Label>
+            <input
+              type="number"
+              min={0}
+              value={dailyMaxProfit}
+              onChange={(e) => setDailyMaxProfit(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full bg-muted border border-border rounded px-2 py-1.5 text-sm font-mono text-foreground"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Max Daily Loss ($)</Label>
+            <input
+              type="number"
+              min={0}
+              value={dailyMaxLoss}
+              onChange={(e) => setDailyMaxLoss(Math.max(0, Number(e.target.value) || 0))}
+              className="w-full bg-muted border border-border rounded px-2 py-1.5 text-sm font-mono text-foreground"
+            />
+          </div>
+        </div>
+
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          onClick={handleResetDailyPnl}
+          disabled={isResetting}
+        >
+          <RotateCcw size={14} className={isResetting ? "animate-spin" : ""} />
+          {isResetting ? "Resetting..." : "Reset Daily P/L & Resume Trading"}
+        </Button>
       </div>
 
       {/* Sound Alerts */}

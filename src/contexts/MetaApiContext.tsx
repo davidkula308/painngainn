@@ -245,6 +245,11 @@ interface MetaApiContextType {
   setMartingaleMultiplier: (v: number) => void;
   setLotScalingEnabled: (v: boolean) => void;
   setLotScalingMultiplier: (v: number) => void;
+  dailyMaxProfit: number;
+  dailyMaxLoss: number;
+  setDailyMaxProfit: (v: number) => void;
+  setDailyMaxLoss: (v: number) => void;
+  resetDailyPnl: () => Promise<void>;
   savedCredentials: { login: string; password: string; server: string } | null;
   error: string | null;
 }
@@ -282,6 +287,9 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [useMaxTradesLimit, setUseMaxTradesLimit] = useState(false);
   const [openPositions, setOpenPositions] = useState<OpenPositionInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Daily limits
+  const [dailyMaxProfit, setDailyMaxProfit] = useState(0);
+  const [dailyMaxLoss, setDailyMaxLoss] = useState(0);
   // Sounds
   const [spikeSound, setSpikeSound] = useState("beep");
   const [tradeSound, setTradeSound] = useState("ding");
@@ -1293,8 +1301,8 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         timeframe,
         use_max_trades_limit: useMaxTradesLimit,
         max_trades_per_spike: maxTradesPerSpike,
-        daily_max_profit: 0,
-        daily_max_loss: 0,
+        daily_max_profit: dailyMaxProfit,
+        daily_max_loss: dailyMaxLoss,
         martingale_enabled: martingaleEnabled,
         martingale_multiplier: martingaleMultiplier,
         lot_scaling_enabled: lotScalingEnabled,
@@ -1322,7 +1330,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
     useMaxTradesLimit, maxTradesPerSpike,
     martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
-    accountInfo,
+    accountInfo, dailyMaxProfit, dailyMaxLoss,
   ]);
 
   const stopServerAutoTrade = useCallback(async () => {
@@ -1338,6 +1346,37 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
       toast.error(err instanceof Error ? err.message : "Failed to stop");
     }
   }, [serverSessionId]);
+
+  const resetDailyPnl = useCallback(async () => {
+    if (!serverSessionId && !connectionId) {
+      toast.error("No active session to reset");
+      return;
+    }
+    try {
+      let freshBalance = accountInfo?.balance || 0;
+      if (connectionId) {
+        try {
+          const { data } = await supabase.functions.invoke("mt5-proxy", {
+            body: { action: "accountInfo", connectionId },
+          });
+          if (data) freshBalance = toNumber(data.balance) || freshBalance;
+        } catch {}
+      }
+
+      if (serverSessionId) {
+        await supabase.functions.invoke("auto-trader", {
+          body: {
+            action: "resetDailyPnl",
+            sessionId: serverSessionId,
+            startingBalance: freshBalance,
+          },
+        });
+      }
+      toast.success("Daily P/L reset successfully. Auto-trader will resume on next spike.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reset daily P/L");
+    }
+  }, [serverSessionId, connectionId, accountInfo]);
 
   return (
     <MetaApiContext.Provider
@@ -1359,6 +1398,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setTimeframe, setMaxTradesPerSpike, setUseMaxTradesLimit,
         setSpikeSound, setTradeSound,
         setMartingaleEnabled, setMartingaleMultiplier, setLotScalingEnabled, setLotScalingMultiplier,
+        dailyMaxProfit, dailyMaxLoss, setDailyMaxProfit, setDailyMaxLoss, resetDailyPnl,
         savedCredentials, error,
       }}
     >
