@@ -1330,7 +1330,7 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     exitMode, takeProfit, stopLoss, tpCandles, slCandles, timeframe,
     useMaxTradesLimit, maxTradesPerSpike,
     martingaleEnabled, martingaleMultiplier, lotScalingEnabled, lotScalingMultiplier,
-    accountInfo,
+    accountInfo, dailyMaxProfit, dailyMaxLoss,
   ]);
 
   const stopServerAutoTrade = useCallback(async () => {
