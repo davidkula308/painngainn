@@ -1342,6 +1342,37 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
   }, [serverSessionId]);
 
+  const resetDailyPnl = useCallback(async () => {
+    if (!serverSessionId && !connectionId) {
+      toast.error("No active session to reset");
+      return;
+    }
+    try {
+      let freshBalance = accountInfo?.balance || 0;
+      if (connectionId) {
+        try {
+          const { data } = await supabase.functions.invoke("mt5-proxy", {
+            body: { action: "accountInfo", connectionId },
+          });
+          if (data) freshBalance = toNumber(data.balance) || freshBalance;
+        } catch {}
+      }
+
+      if (serverSessionId) {
+        await supabase.functions.invoke("auto-trader", {
+          body: {
+            action: "resetDailyPnl",
+            sessionId: serverSessionId,
+            startingBalance: freshBalance,
+          },
+        });
+      }
+      toast.success("Daily P/L reset successfully. Auto-trader will resume on next spike.");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to reset daily P/L");
+    }
+  }, [serverSessionId, connectionId, accountInfo]);
+
   return (
     <MetaApiContext.Provider
       value={{
