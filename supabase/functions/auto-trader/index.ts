@@ -18,6 +18,139 @@ const sb = createClient(supabaseUrl, supabaseServiceKey);
 
 const toNumber = (v: unknown) => Number(v) || 0;
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" ? value as Record<string, unknown> : null;
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function extractTicket(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+
+  if (typeof value === "string") {
+    const direct = Number(value.trim());
+    if (Number.isFinite(direct)) return direct;
+
+    const matched = value.match(/\b(\d{4,})\b/);
+    if (matched) return Number(matched[1]);
+    return undefined;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const ticket = extractTicket(item);
+      if (ticket) return ticket;
+    }
+    return undefined;
+  }
+
+  const payload = asRecord(value);
+  if (!payload) return undefined;
+
+  for (const key of ["ticket", "Ticket", "order", "Order", "orderTicket", "positionId", "deal", "result", "id"]) {
+    const ticket = extractTicket(payload[key]);
+    if (ticket) return ticket;
+  }
+
+  return undefined;
+}
+
+function normalizeTradeSide(value: unknown): "Buy" | "Sell" | undefined {
+  const normalized = String(value ?? "").toLowerCase();
+  if (normalized.includes("buy")) return "Buy";
+  if (normalized.includes("sell")) return "Sell";
+  return undefined;
+}
+
+type OpenOrderSnapshot = {
+  ticket: number;
+  symbol: string;
+  lots: number;
+  openPrice: number;
+  operation: "Buy" | "Sell";
+  openedAt?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+};
+
+function normalizeSymbol(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function parseTimestamp(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value > 1e12 ? value : value * 1000;
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return undefined;
+
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric)) {
+      return numeric > 1e12 ? numeric : numeric * 1000;
+    }
+
+    const parsed = Date.parse(trimmed);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  }
+
+  return undefined;
+}
+
+function toOpenOrderSnapshot(order: unknown): OpenOrderSnapshot | null {
+  const payload = asRecord(order);
+  if (!payload) return null;
+
+  const ticket = extractTicket(payload.ticket ?? payload.Ticket ?? payload.order ?? payload.Order ?? payload.positionId);
+  const symbol = String(payload.symbol ?? payload.Symbol ?? "").trim();
+  const lots = toFiniteNumber(payload.lots ?? payload.Lots ?? payload.volume ?? payload.Volume);
+  const openPrice = toFiniteNumber(payload.openPrice ?? payload.OpenPrice ?? payload.price ?? payload.Price);
+  const operation = normalizeTradeSide(payload.type ?? payload.Type ?? payload.operation ?? payload.Operation ?? payload.orderType ?? payload.OrderType);
+  const stopLoss = toFiniteNumber(payload.stopLoss ?? payload.StopLoss ?? payload.stoploss ?? payload.sl ?? payload.SL);
+  const takeProfit = toFiniteNumber(payload.takeProfit ?? payload.TakeProfit ?? payload.takeprofit ?? payload.tp ?? payload.TP);
+  const openedAt = parseTimestamp(
+    payload.openTime ?? payload.OpenTime ?? payload.time ?? payload.Time ?? payload.date ?? payload.Date ?? payload.createdAt
+  );
+
+  if (!ticket || !symbol || lots === undefined || openPrice === undefined || !operation) {
+    return null;
+  }
+
+  return { ticket, symbol, lots, openPrice, operation, openedAt, stopLoss, takeProfit };
+}
+
+function approximatelyEqual(a: number, b: number): boolean {
+  return Math.abs(a - b) <= Math.max(1e-6, Math.abs(a) * 1e-8, Math.abs(b) * 1e-8);
+}
+
+function hasExpectedStops(order: OpenOrderSnapshot | null, tp?: number, sl?: number): boolean {
+  if (!order) return false;
+
+  const expectsTp = Number.isFinite(tp) && Number(tp) > 0;
+  const expectsSl = Number.isFinite(sl) && Number(sl) > 0;
+  const tpMatches = !expectsTp || (order.takeProfit !== undefined && approximatelyEqual(order.takeProfit, Number(tp)));
+  const slMatches = !expectsSl || (order.stopLoss !== undefined && approximatelyEqual(order.stopLoss, Number(sl)));
+
+  return tpMatches && slMatches;
+}
+
+function isTradeFailurePayload(value: unknown): boolean {
+  const payload = asRecord(value);
+  if (!payload) return false;
+  if (payload.error) return true;
+
+  const code = String(payload.code ?? "").toUpperCase();
+  const hasTicket = extractTicket(payload) !== undefined;
+  if (!code) return false;
+  if (["OK", "SUCCESS", "DONE", "PLACED"].includes(code)) return false;
+
+  return !hasTicket;
+}
+
 async function mt5Fetch(url: string, timeoutMs = REQUEST_TIMEOUT_MS): Promise<Response> {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const controller = new AbortController();
@@ -159,11 +292,92 @@ async function getQuote(connId: string, symbol: string) {
   return { bid: toNumber(d.bid ?? d.Bid), ask: toNumber(d.ask ?? d.Ask) };
 }
 
+async function getOpenedOrderByTicket(connId: string, ticket: number): Promise<OpenOrderSnapshot | null> {
+  const data = await mt5Json(
+    `${MT5_API_URL}/OpenedOrder?id=${encodeURIComponent(connId)}&ticket=${encodeURIComponent(String(ticket))}`
+  );
+  return toOpenOrderSnapshot(data);
+}
+
+async function findLatestOpenedOrder(
+  connId: string,
+  symbol: string,
+  operation: "Buy" | "Sell",
+  volume: number,
+  requestedAt?: number,
+): Promise<OpenOrderSnapshot | null> {
+  const data = await mt5Json(`${MT5_API_URL}/OpenedOrders?id=${encodeURIComponent(connId)}`);
+  if (!Array.isArray(data)) return null;
+
+  const targetSymbol = normalizeSymbol(symbol);
+  const matched = data
+    .map(toOpenOrderSnapshot)
+    .filter((order): order is OpenOrderSnapshot => Boolean(order))
+    .filter((order) => normalizeSymbol(order.symbol) === targetSymbol && order.operation === operation)
+    .sort((a, b) => {
+      const aRecency = a.openedAt ?? a.ticket;
+      const bRecency = b.openedAt ?? b.ticket;
+      return bRecency - aRecency;
+    });
+
+  const exactVolumeMatch = matched.find((order) => Math.abs(order.lots - volume) < 1e-6);
+  if (exactVolumeMatch) return exactVolumeMatch;
+
+  const freshMatch = requestedAt
+    ? matched.find((order) => order.openedAt !== undefined && order.openedAt >= requestedAt - 15000)
+    : undefined;
+  if (freshMatch) return freshMatch;
+
+  return matched[0] ?? null;
+}
+
+async function waitForOpenedOrder(
+  connId: string,
+  symbol: string,
+  operation: "Buy" | "Sell",
+  volume: number,
+  openedTicket?: number,
+  requestedAt?: number,
+  directOrder?: OpenOrderSnapshot | null,
+): Promise<OpenOrderSnapshot | null> {
+  if (directOrder && normalizeSymbol(directOrder.symbol) === normalizeSymbol(symbol) && directOrder.operation === operation) {
+    return directOrder;
+  }
+
+  for (let attempt = 0; attempt < 5; attempt++) {
+    if (openedTicket) {
+      const byTicket = await getOpenedOrderByTicket(connId, openedTicket);
+      if (byTicket) return byTicket;
+    }
+
+    const latestMatch = await findLatestOpenedOrder(connId, symbol, operation, volume, requestedAt);
+    if (latestMatch) return latestMatch;
+
+    await new Promise((resolve) => setTimeout(resolve, 300 + attempt * 200));
+  }
+
+  return null;
+}
+
+async function applyStopsToOpenedOrder(connId: string, order: OpenOrderSnapshot, tp?: number, sl?: number): Promise<void> {
+  const takeProfit = Number.isFinite(tp) && Number(tp) > 0 ? Number(tp) : 0;
+  const stopLoss = Number.isFinite(sl) && Number(sl) > 0 ? Number(sl) : 0;
+  let url = `${MT5_API_URL}/OrderModifySafe?id=${encodeURIComponent(connId)}&ticket=${encodeURIComponent(String(order.ticket))}&stoploss=${encodeURIComponent(String(stopLoss))}&takeprofit=${encodeURIComponent(String(takeProfit))}`;
+
+  if (Number.isFinite(order.openPrice) && order.openPrice > 0) {
+    url += `&price=${encodeURIComponent(String(order.openPrice))}`;
+  }
+
+  await mt5Json(url);
+}
+
 async function openTrade(
   connId: string, symbol: string, type: string, volume: number,
   tpPrice?: number, slPrice?: number, entryPrice?: number, slippage?: number
-): Promise<{ ticket?: number; error?: string }> {
+): Promise<{ ticket?: number; error?: string; warning?: string }> {
   const operation = type === "sell" ? "Sell" : "Buy";
+  const hasStops = (Number.isFinite(tpPrice) && Number(tpPrice) > 0) || (Number.isFinite(slPrice) && Number(slPrice) > 0);
+  const requestedAt = Date.now();
   let url = `${MT5_API_URL}/OrderSendSafe?id=${encodeURIComponent(connId)}&symbol=${encodeURIComponent(symbol)}&operation=${encodeURIComponent(operation)}&volume=${encodeURIComponent(String(volume))}`;
   if (entryPrice && entryPrice > 0) url += `&price=${encodeURIComponent(String(entryPrice))}`;
   if (slippage && slippage >= 0) url += `&slippage=${encodeURIComponent(String(Math.round(slippage)))}`;
@@ -171,11 +385,33 @@ async function openTrade(
   if (tpPrice && tpPrice > 0) url += `&takeprofit=${encodeURIComponent(String(tpPrice))}`;
 
   const data = await mt5Json(url, TRADE_TIMEOUT_MS);
-  const d = data as Record<string, unknown>;
-  if (d.error) return { error: String(d.error) };
+  if (isTradeFailurePayload(data)) {
+    const payload = asRecord(data) ?? {};
+    return { error: String(payload.message ?? payload.error ?? "Trade execution failed") };
+  }
 
-  const ticket = toNumber(d.ticket ?? d.Ticket ?? d.order ?? d.Order ?? d.result);
-  return { ticket: ticket > 0 ? ticket : undefined };
+  const directOrder = toOpenOrderSnapshot(data);
+  if (hasExpectedStops(directOrder, tpPrice, slPrice)) {
+    return { ticket: directOrder?.ticket };
+  }
+
+  const openedTicket = extractTicket(data);
+  const resolvedOrder = await waitForOpenedOrder(connId, symbol, operation, volume, openedTicket, requestedAt, directOrder);
+  if (!resolvedOrder) {
+    return { error: "Trade request returned success but no opened position was found" };
+  }
+
+  if (!hasStops || hasExpectedStops(resolvedOrder, tpPrice, slPrice)) {
+    return { ticket: resolvedOrder.ticket };
+  }
+
+  try {
+    await applyStopsToOpenedOrder(connId, resolvedOrder, tpPrice, slPrice);
+    return { ticket: resolvedOrder.ticket };
+  } catch (err) {
+    console.error("Failed to apply TP/SL after trade open:", err);
+    return { ticket: resolvedOrder.ticket, warning: "Trade opened, but TP/SL modification failed" };
+  }
 }
 
 function computePriceLevel(
@@ -247,83 +483,120 @@ async function processSession(session: Record<string, unknown>) {
 
   console.log(`Session ${sessionId}: ${newSpikes.length} spike(s) detected`);
 
-  const sorted = [...newSpikes].sort((a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol));
-  const chosen = sorted[0];
-  const tradeType = getAutoTradeDirection(chosen.symbol, chosen.direction);
-
   const exitMode = String(session.exit_mode || "pips");
   const lotSize = toNumber(session.lot_size);
   const martingaleEnabled = Boolean(session.martingale_enabled);
   const lotScalingEnabled = Boolean(session.lot_scaling_enabled);
   const currentEffectiveLot = toNumber(session.current_effective_lot) || lotSize;
   const effectiveLot = (martingaleEnabled || lotScalingEnabled) ? currentEffectiveLot : lotSize;
-
-  const quote = await getQuote(connId, chosen.symbol);
-  const params = await getSymbolParams(connId, chosen.symbol);
-  const entryPrice = tradeType === "buy" ? quote.ask : quote.bid;
-  const slippage = Math.max(2, Math.ceil(params.spread || 0));
-
-  let tpPrice: number | undefined;
-  let slPrice: number | undefined;
-
-  // Only compute price-based TP/SL in pips mode
-  // In candle mode, the server opens trades WITHOUT TP/SL (client handles candle exits)
-  if (exitMode === "pips") {
-    const tpPips = toNumber(session.take_profit);
-    const slPips = toNumber(session.stop_loss);
-    if (tpPips > 0) tpPrice = computePriceLevel(entryPrice, tradeType, tpPips, params.tickSize, params.spread, "tp");
-    if (slPips > 0) slPrice = computePriceLevel(entryPrice, tradeType, slPips, params.tickSize, params.spread, "sl");
-  }
-
   const useMaxLimit = Boolean(session.use_max_trades_limit);
   const maxTrades = useMaxLimit ? toNumber(session.max_trades_per_spike) : 200;
-
-  // Stagger trades in small groups of 3 to avoid overwhelming the MT5 API
   const BATCH_SIZE = 3;
-  const allResults: { success: boolean }[] = [];
+  const successfulSpikeKeys: string[] = [];
+  const tradeMessages: string[] = [];
 
-  for (let i = 0; i < maxTrades; i += BATCH_SIZE) {
-    const chunk: Promise<{ success: boolean }>[] = [];
-    for (let j = i; j < Math.min(i + BATCH_SIZE, maxTrades); j++) {
-      chunk.push((async () => {
-        try {
-          let freshTp = tpPrice;
-          let freshSl = slPrice;
-          if (exitMode === "pips") {
-            const freshQuote = await getQuote(connId, chosen.symbol);
-            const freshEntry = tradeType === "buy" ? freshQuote.ask : freshQuote.bid;
-            const tpPips = toNumber(session.take_profit);
-            const slPips = toNumber(session.stop_loss);
-            if (tpPips > 0) freshTp = computePriceLevel(freshEntry, tradeType, tpPips, params.tickSize, params.spread, "tp");
-            if (slPips > 0) freshSl = computePriceLevel(freshEntry, tradeType, slPips, params.tickSize, params.spread, "sl");
-          }
+  for (const spike of [...newSpikes].sort((a, b) => extractIndexNumber(b.symbol) - extractIndexNumber(a.symbol))) {
+    const tradeType = getAutoTradeDirection(spike.symbol, spike.direction);
+    const quote = await getQuote(connId, spike.symbol);
+    const params = await getSymbolParams(connId, spike.symbol);
+    const entryPrice = tradeType === "buy" ? quote.ask : quote.bid;
 
-          const result = await openTrade(connId, chosen.symbol, tradeType, effectiveLot, freshTp, freshSl, entryPrice, slippage);
-          if (result.error) {
-            console.log(`Trade failed: ${result.error}`);
-            return { success: false };
+    if (!entryPrice || entryPrice <= 0) {
+      const message = `Session ${sessionId}: skipped ${spike.symbol} because no valid quote was available`;
+      console.warn(message);
+      tradeMessages.push(message);
+      continue;
+    }
+
+    const slippage = Math.max(2, Math.ceil(params.spread || 0));
+    let tpPrice: number | undefined;
+    let slPrice: number | undefined;
+
+    if (exitMode === "pips") {
+      const tpPips = toNumber(session.take_profit);
+      const slPips = toNumber(session.stop_loss);
+      if (tpPips > 0) tpPrice = computePriceLevel(entryPrice, tradeType, tpPips, params.tickSize, params.spread, "tp");
+      if (slPips > 0) slPrice = computePriceLevel(entryPrice, tradeType, slPips, params.tickSize, params.spread, "sl");
+    }
+
+    const allResults: { success: boolean; error?: string; warning?: string; ticket?: number }[] = [];
+
+    for (let i = 0; i < maxTrades; i += BATCH_SIZE) {
+      const chunk: Promise<{ success: boolean; error?: string; warning?: string; ticket?: number }>[] = [];
+      for (let j = i; j < Math.min(i + BATCH_SIZE, maxTrades); j++) {
+        chunk.push((async () => {
+          try {
+            let freshTp = tpPrice;
+            let freshSl = slPrice;
+            let freshEntry = entryPrice;
+
+            if (exitMode === "pips") {
+              const freshQuote = await getQuote(connId, spike.symbol);
+              freshEntry = tradeType === "buy" ? freshQuote.ask : freshQuote.bid;
+              if (!freshEntry || freshEntry <= 0) {
+                return { success: false, error: "No valid quote returned before trade send" };
+              }
+
+              const tpPips = toNumber(session.take_profit);
+              const slPips = toNumber(session.stop_loss);
+              if (tpPips > 0) freshTp = computePriceLevel(freshEntry, tradeType, tpPips, params.tickSize, params.spread, "tp");
+              if (slPips > 0) freshSl = computePriceLevel(freshEntry, tradeType, slPips, params.tickSize, params.spread, "sl");
+            }
+
+            const result = await openTrade(connId, spike.symbol, tradeType, effectiveLot, freshTp, freshSl, freshEntry, slippage);
+            if (result.error || !result.ticket) {
+              return { success: false, error: result.error ?? "Trade was not confirmed by broker" };
+            }
+
+            return { success: true, warning: result.warning, ticket: result.ticket };
+          } catch (err) {
+            console.error("Trade error:", err);
+            return { success: false, error: err instanceof Error ? err.message : String(err) };
           }
-          return { success: true };
-        } catch (err) {
-          console.error("Trade error:", err);
-          return { success: false };
-        }
-      })());
+        })());
+      }
+
+      const chunkResults = await Promise.all(chunk);
+      allResults.push(...chunkResults);
+      if (i + BATCH_SIZE < maxTrades) {
+        await new Promise(r => setTimeout(r, 200));
+      }
     }
-    const chunkResults = await Promise.all(chunk);
-    allResults.push(...chunkResults);
-    // Small delay between chunks
-    if (i + BATCH_SIZE < maxTrades) {
-      await new Promise(r => setTimeout(r, 200));
+
+    const totalOpened = allResults.filter(r => r.success).length;
+    const warnings = allResults.map((result) => result.warning).filter((warning): warning is string => Boolean(warning));
+    const failures = allResults.map((result) => result.error).filter((error): error is string => Boolean(error));
+
+    if (totalOpened > 0) {
+      successfulSpikeKeys.push(spike.key);
+      const message = `Session ${sessionId}: opened ${totalOpened} trades on ${spike.symbol}`;
+      console.log(message);
+      tradeMessages.push(message);
+      if (warnings.length > 0) {
+        const warningMessage = `Session ${sessionId}: ${spike.symbol} warnings — ${warnings.join(" | ")}`;
+        console.warn(warningMessage);
+        tradeMessages.push(warningMessage);
+      }
+      continue;
     }
+
+    const failureMessage = `Session ${sessionId}: detected spike on ${spike.symbol} but no trades were confirmed${failures.length > 0 ? ` — ${failures.join(" | ")}` : ""}`;
+    console.error(failureMessage);
+    tradeMessages.push(failureMessage);
   }
 
-  const totalOpened = allResults.filter(r => r.success).length;
+  const trimmedKeys = [...processedKeys, ...successfulSpikeKeys].slice(-500);
 
-  console.log(`Session ${sessionId}: opened ${totalOpened} trades on ${chosen.symbol}`);
+  if (!successfulSpikeKeys.length) {
+    await sb.from("trading_sessions").update({
+      connection_id: connId,
+      last_trade_result: tradeMessages[tradeMessages.length - 1] ?? "Spike detected but no trades were confirmed",
+      updated_at: new Date().toISOString(),
+    }).eq("id", sessionId);
+    return;
+  }
 
-  const allKeys = [...processedKeys, ...newSpikes.map(s => s.key)];
-  const trimmedKeys = allKeys.slice(-500);
+  const lastProcessedSpikeKey = successfulSpikeKeys[successfulSpikeKeys.length - 1];
 
   // After trades fire, check if daily P/L limits have been reached
   const updatedAccount = await getAccountInfo(connId);
@@ -348,7 +621,7 @@ async function processSession(session: Record<string, unknown>) {
     await sb.from("trading_sessions").update({
       connection_id: connId,
       processed_spike_keys: trimmedKeys,
-      last_spike_key: chosen.key,
+      last_spike_key: lastProcessedSpikeKey,
       is_active: false,
       last_trade_result: deactivateReason,
       daily_closed_pnl: dailyPnl,
@@ -360,8 +633,9 @@ async function processSession(session: Record<string, unknown>) {
   await sb.from("trading_sessions").update({
     connection_id: connId,
     processed_spike_keys: trimmedKeys,
-    last_spike_key: chosen.key,
+    last_spike_key: lastProcessedSpikeKey,
     daily_closed_pnl: dailyPnl,
+    last_trade_result: tradeMessages[tradeMessages.length - 1] ?? null,
     updated_at: new Date().toISOString(),
   }).eq("id", sessionId);
 }
