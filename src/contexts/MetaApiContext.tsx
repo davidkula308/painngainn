@@ -332,25 +332,38 @@ export const MetaApiProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, []);
 
-  const fetchAccountInfoInternal = useCallback(async (connId: string) => {
-    try {
-      const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
-        body: { action: "accountInfo", connectionId: connId },
-      });
-      if (fnError) throw fnError;
-      setAccountInfo({
-        balance: toNumber(data.balance),
-        equity: toNumber(data.equity),
-        margin: toNumber(data.margin),
-        freeMargin: toNumber(data.freeMargin),
-        marginLevel: toNumber(data.marginLevel),
-        leverage: toNumber(data.leverage),
-        currency: data.currency || "USD",
-        server: data.server || "",
-        name: data.name || "",
-      });
-    } catch (err: unknown) {
-      console.error("Failed to fetch account info:", err);
+  const fetchAccountInfoInternal = useCallback(async (connId: string, retries = 3) => {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const { data, error: fnError } = await supabase.functions.invoke("mt5-proxy", {
+          body: { action: "accountInfo", connectionId: connId },
+        });
+        if (fnError) throw fnError;
+        const balance = toNumber(data.balance);
+        const equity = toNumber(data.equity);
+        setAccountInfo({
+          balance,
+          equity,
+          margin: toNumber(data.margin),
+          freeMargin: toNumber(data.freeMargin),
+          marginLevel: toNumber(data.marginLevel),
+          leverage: toNumber(data.leverage),
+          currency: data.currency || "USD",
+          server: data.server || "",
+          name: data.name || "",
+        });
+        // If balance and equity are both 0, the API may not be ready yet — retry
+        if (balance === 0 && equity === 0 && attempt < retries) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        return; // Got valid data, stop retrying
+      } catch (err: unknown) {
+        console.error("Failed to fetch account info:", err);
+        if (attempt < retries) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
     }
   }, []);
 
